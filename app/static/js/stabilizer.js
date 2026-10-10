@@ -64,10 +64,15 @@ export class PredictionStabilizer {
     return label;
   }
 
-  /** Reset the stability counter and repeat-commit lock after hand absence. */
-  reset() {
+  /** Reset the pending prediction without changing the duplicate-commit lock. */
+  resetPending() {
     this.currentLabel = null;
     this.currentCount = 0;
+  }
+
+  /** Reset the stability counter and repeat-commit lock after hand absence. */
+  reset() {
+    this.resetPending();
     this.lastCommittedLabel = null;
     this.lastCommittedAt = 0;
   }

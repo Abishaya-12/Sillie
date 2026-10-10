@@ -10,7 +10,13 @@ from typing import Any, TypeGuard
 
 from flask import Blueprint, Response, current_app, jsonify, render_template, request
 
-from ml.inference import ModelNotFoundError, SignClassifier
+from config import (
+    FEATURES_PER_FRAME,
+    IDLE_LABEL,
+    SAMPLE_RATE_HZ,
+    SEQUENCE_LENGTH,
+)
+from ml.inference import ModelConfigurationError, ModelNotFoundError, SignClassifier
 
 blueprint = Blueprint("app", __name__)
 LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -34,6 +40,17 @@ def health() -> tuple[Response, int]:
     return jsonify({"status": "ok", "service": "sillie"}), 200
 
 
+@blueprint.route("/api/config")
+def api_config() -> Response:
+    """Expose the shared sequence and feature dimensions to browser clients."""
+    return jsonify({
+        "sequence_length": SEQUENCE_LENGTH,
+        "sample_rate_hz": SAMPLE_RATE_HZ,
+        "features_per_frame": FEATURES_PER_FRAME,
+        "idle_label": IDLE_LABEL,
+    })
+
+
 @blueprint.route("/api/samples", methods=["POST"])
 def save_samples() -> tuple[Response, int]:
     """Validate and append normalized hand samples to the label CSV."""
@@ -53,10 +70,16 @@ def save_samples() -> tuple[Response, int]:
             "error": "session must contain only letters, numbers, dashes, or underscores."
         }), 400
 
-    samples = normalize_sample_rows(payload.get("samples"))
+    samples = normalize_sample_rows(
+        payload.get("samples"), SEQUENCE_LENGTH * FEATURES_PER_FRAME
+    )
     if samples is None:
         return jsonify({
-            "error": "samples must be a list of rows, each containing exactly 63 finite numbers."
+            "error": (
+                "samples must be a list of rows with exactly "
+                f"{SEQUENCE_LENGTH * FEATURES_PER_FRAME} finite numbers. "
+                "The format changed; re-record samples using the current sequence collector."
+            )
         }), 400
 
     data_dir: Path = current_app.config["DATA_DIR"]
@@ -66,7 +89,9 @@ def save_samples() -> tuple[Response, int]:
     with sample_file.open("a", newline="", encoding="utf-8") as csv_file:
         csv.writer(csv_file).writerows(samples)
 
-    total_samples, session_count = count_label_samples(data_dir, label)
+    total_samples, session_count = count_label_samples(
+        data_dir, label, SEQUENCE_LENGTH * FEATURES_PER_FRAME
+    )
     return jsonify({
         "label": label,
         "samples": total_samples,
@@ -92,7 +117,10 @@ def sample_summary() -> Response:
             and any(label_dir.glob("*.csv"))
         )
     counts = {
-        label: dict(zip(("samples", "sessions"), count_label_samples(data_dir, label)))
+        label: dict(zip(
+            ("samples", "sessions"),
+            count_label_samples(data_dir, label, SEQUENCE_LENGTH * FEATURES_PER_FRAME),
+        ))
         for label in sorted(labels)
     }
     return jsonify(counts)
@@ -105,19 +133,43 @@ def predict_sign() -> tuple[Response, int]:
     if not isinstance(payload, dict):
         return jsonify({"error": "Request body must be a JSON object."}), 400
 
-    features = normalize_feature_vector(payload.get("features"))
-    if features is None:
+    if "features" in payload:
         return jsonify({
-            "error": "features must be a list of exactly 63 finite numbers."
+            "error": "The prediction format changed: send a sequence in the 'window' field."
+        }), 400
+
+    window = normalize_feature_vector(
+        payload.get("window"), SEQUENCE_LENGTH * FEATURES_PER_FRAME
+    )
+    if window is None:
+        return jsonify({
+            "error": (
+                "window must be a list of exactly "
+                f"{SEQUENCE_LENGTH * FEATURES_PER_FRAME} finite numbers."
+            )
         }), 400
 
     classifier: SignClassifier = current_app.extensions["sign_classifier"]
     try:
-        label, confidence = classifier.predict(features)
+        label, confidence = classifier.predict(window)
     except ModelNotFoundError:
         return jsonify({
             "error": "No trained model found. Run `python -m ml.train` first."
         }), 503
+    except ModuleNotFoundError as error:
+        if error.name != "tensorflow":
+            raise
+        return jsonify({
+            "error": (
+                "TensorFlow is not installed in the Python environment running the "
+                "server. Start it with `.venv\\Scripts\\python.exe server.py` after "
+                "installing `requirements-ml.txt` in that environment."
+            )
+        }), 503
+    except ModelConfigurationError as error:
+        return jsonify({"error": str(error)}), 503
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 503
     return jsonify({"label": label, "confidence": confidence}), 200
 
 
@@ -134,14 +186,16 @@ def is_valid_label(label: object) -> TypeGuard[str]:
     return isinstance(label, str) and LABEL_PATTERN.fullmatch(label) is not None
 
 
-def normalize_sample_rows(samples: object) -> list[list[float]] | None:
+def normalize_sample_rows(
+    samples: object, expected_length: int
+) -> list[list[float]] | None:
     """Validate sample rows and convert their numeric values to floats."""
     if not isinstance(samples, list):
         return None
 
     rows: list[list[float]] = []
     for sample in samples:
-        if not isinstance(sample, list) or len(sample) != 63:
+        if not isinstance(sample, list) or len(sample) != expected_length:
             return None
         if any(not is_finite_number(value) for value in sample):
             return None
@@ -149,9 +203,11 @@ def normalize_sample_rows(samples: object) -> list[list[float]] | None:
     return rows
 
 
-def normalize_feature_vector(features: object) -> list[float] | None:
-    """Validate and normalize one 63-value feature vector."""
-    if not isinstance(features, list) or len(features) != 63:
+def normalize_feature_vector(
+    features: object, expected_length: int
+) -> list[float] | None:
+    """Validate and normalize one configured sequence feature vector."""
+    if not isinstance(features, list) or len(features) != expected_length:
         return None
     if any(not is_finite_number(value) for value in features):
         return None
@@ -168,20 +224,21 @@ def is_finite_number(value: object) -> bool:
         return False
 
 
-def count_samples(sample_file: Path) -> int:
-    """Count CSV records stored in a sample file."""
+def count_samples(sample_file: Path, expected_length: int) -> int:
+    """Count valid sequence-window CSV rows in a sample file."""
     with sample_file.open("r", newline="", encoding="utf-8") as csv_file:
-        return sum(1 for row in csv.reader(csv_file) if row)
+        return sum(1 for row in csv.reader(csv_file) if len(row) == expected_length)
 
 
-def count_label_samples(data_dir: Path, label: str) -> tuple[int, int]:
-    """Count samples and sessions, including any legacy flat CSV for a label."""
+def count_label_samples(
+    data_dir: Path, label: str, expected_length: int
+) -> tuple[int, int]:
+    """Count valid sequence windows and sessions for a label."""
     label_dir = data_dir / label
     session_files = list(label_dir.glob("*.csv")) if label_dir.exists() else []
     legacy_file = data_dir / f"{label}.csv"
-    sample_count = sum(count_samples(path) for path in session_files)
+    sample_count = sum(count_samples(path, expected_length) for path in session_files)
     session_count = len(session_files)
     if legacy_file.is_file():
-        sample_count += count_samples(legacy_file)
         session_count += 1
     return sample_count, session_count

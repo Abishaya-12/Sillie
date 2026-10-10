@@ -50,9 +50,11 @@
           <input id="collector-name" type="text" autocomplete="name" placeholder="ANONYMOUS" />
           <label class="label" for="sign-label">SIGN LABEL</label>
           <input id="sign-label" type="text" autocomplete="off" placeholder="E.G. HELLO" />
+          <p class="label">RECORD AN "IDLE" SIGN TOO (HAND RESTING OR MOVING RANDOMLY).</p>
           <div class="speech-box">
             <p class="label">PROGRESS</p>
-            <p id="progress" aria-live="polite">0 / 100</p>
+            <p id="progress" aria-live="polite">0 / 0 TICKS</p>
+            <p id="collection-stats" aria-live="polite">0 RECORDINGS / 0 WINDOWS</p>
             <button class="key-danger" id="record-button" type="button">REC</button>
             <button class="key-primary" id="save-button" type="button" disabled>SAVE</button>
             <p id="collection-message" role="status" aria-live="polite"></p>

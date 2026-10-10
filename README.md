@@ -41,7 +41,7 @@ For model training or offline landmark processing, install the ML extras separat
 pip install -r requirements-ml.txt
 ```
 
-The ML requirements include scikit-learn for session-aware splits and confusion-matrix evaluation. Training keeps sessions separate between train, validation, and test where each label has at least three sessions. Otherwise, it warns and falls back to a stratified sample-level split, whose accuracy may be optimistic. To train the sign classifier after collecting samples, run:
+The ML requirements include scikit-learn for session-aware splits and confusion-matrix evaluation. Training keeps sessions separate between train, validation, and test where each label has at least three sessions. Otherwise, it warns and falls back to a stratified window-level split, whose accuracy may be optimistic.
 
 ```bash
 python -m ml.train
@@ -49,14 +49,20 @@ python -m ml.train
 
 Running server-side predictions also requires TensorFlow and the other ML packages; install them with `pip install -r requirements-ml.txt` before training or requesting predictions.
 
+Run the server with the same Python environment used to install the ML requirements and train the model. On Windows, from the repository root, use `.venv\Scripts\python.exe server.py`; starting it with a different Python can leave TensorFlow unavailable to prediction requests.
+
 The app will be available at `http://127.0.0.1:5000`.
 
 For an offline demo, download the Press Start 2P and VT323 font files into `app/static/fonts/` and replace the Google Fonts link in each page with local `@font-face` declarations in `app/static/css/style.css`.
 
 ## Collecting data
 
-Open `http://127.0.0.1:5000/collect`, optionally enter your name, enter a label using letters, numbers, dashes, or underscores, then select **Record**. The browser records 100 frames where exactly one hand is detected. **Save samples** assigns that batch a unique session and stores it in `data/<label>/<session>.csv`; the collection page shows total sample and session counts. Existing flat `data/<label>.csv` files remain included and count as one `legacy` session. Set `SILLIE_DATA_DIR` to use a different storage directory. For meaningful session-isolated evaluation, collect at least three sessions for every label.
+Open `http://127.0.0.1:5000/collect`, optionally enter your name, and enter a label using letters, numbers, dashes, or underscores. Record each sign as a short motion: the page counts down, samples at the configured 30 Hz, then captures a three-second recording and saves valid overlapping sequence windows. Repeat each sign 2-3 times per recording; collect at least three separate recordings per label and include data from at least two people. Record an `idle` label too (hand resting or moving randomly) so the model has a background class. **Save samples** stores the collected windows in `data/<label>/<session>.csv`.
+
+The model now expects 30 frames × 66 features per frame. Old single-frame data and files with the previous format are skipped by training; delete old 63-value CSVs (including old `data/<label>/<session>.csv` files) or re-record them with the sequence collector before training. Set `SILLIE_DATA_DIR` to use a different dataset directory.
+
+Workflow: collect several sessions for each label at `/collect`, install the ML dependencies, run `python -m ml.train`, then start the app with `python server.py` and test live translation at `/`.
 
 ## Current status
 
-The webcam hand-tracking page and browser-based sample collection are in place. The next milestone is training and testing a sign classifier on the collected landmarks.
+The webcam hand-tracking page, sequence data collection, GRU training, and live sequence prediction are in place.

@@ -1,11 +1,15 @@
 "use strict";
 
-import { startHandTracking } from "./hand-tracking.js";
-import { normalizeLandmarks } from "./landmarks.js";
 import { fetchJson } from "./api.js";
+import { FrameClock } from "./frame-clock.js";
+import { buildWindow, configureLandmarks } from "./landmarks.js";
+import { startHandTracking } from "./hand-tracking.js";
 
-const REQUIRED_SAMPLES = 100;
+const COLLECTION_DURATION_SECONDS = 3;
+const COUNTDOWN_SECONDS = 3;
+const WINDOW_STRIDE = 5;
 const HEALTH_CHECK_INTERVAL_MS = 5000;
+
 const video = document.getElementById("camera");
 const overlay = document.getElementById("overlay");
 const collectorName = document.getElementById("collector-name");
@@ -13,58 +17,133 @@ const labelInput = document.getElementById("sign-label");
 const recordButton = document.getElementById("record-button");
 const saveButton = document.getElementById("save-button");
 const progress = document.getElementById("progress");
+const collectionStats = document.getElementById("collection-stats");
 const message = document.getElementById("collection-message");
 const statusPill = document.querySelector(".status-pill");
 const summaryList = document.getElementById("summary-list");
 const serverStatus = document.getElementById("server-status");
 
+let config = null;
+let frameClock = null;
 let isRecording = false;
+let captureFrames = [];
 let samples = [];
 let sampleLabel = "";
 let collectorNameForBatch = "";
+let recordingCount = 0;
 
-/** Update the sample capture counter. */
+/** Update the capture tick counter using the configured fixed sample rate. */
 function updateProgress() {
-  progress.textContent = `${samples.length} / ${REQUIRED_SAMPLES}`;
+  const expectedTicks = config.sample_rate_hz * COLLECTION_DURATION_SECONDS;
+  progress.textContent = `${captureFrames.length} / ${expectedTicks} TICKS`;
+}
+
+/** Update the accumulated recording and accepted-window counter. */
+function updateCollectionStats() {
+  collectionStats.textContent = `${recordingCount} RECORDINGS / ${samples.length} WINDOWS`;
 }
 
 /**
- * Store a normalized frame when exactly one hand is visible.
- * @param {{x: number, y: number, z: number}[][]} hands Detected hand landmarks.
+ * Process one fixed-clock frame while a recording is active.
+ * @param {object | null} frame Normalized frame data or null when no single hand is visible.
  */
-function recordHandFrame(hands) {
-  if (!isRecording || hands.length !== 1) {
+function handleClockTick(frame) {
+  if (!isRecording) {
     return;
   }
 
-  samples.push(normalizeLandmarks(hands[0]));
+  captureFrames.push(frame);
   updateProgress();
-  if (samples.length === REQUIRED_SAMPLES) {
-    isRecording = false;
-    saveButton.disabled = false;
-    message.textContent = "RECORDING COMPLETE. SAVE THE SAMPLES WHEN READY.";
+  const expectedTicks = config.sample_rate_hz * COLLECTION_DURATION_SECONDS;
+  if (captureFrames.length >= expectedTicks) {
+    finishRecording();
   }
 }
 
-/** Start the shared camera and hand-tracking pipeline. */
-async function startCamera() {
-  try {
-    await startHandTracking({
-      video,
-      overlay,
-      onHands: recordHandFrame,
-      onStatus: (status) => {
-        statusPill.textContent = status.toUpperCase();
-      },
-    });
-  } catch (error) {
-    statusPill.textContent = "CAMERA UNAVAILABLE";
-    message.textContent = error.message;
-    console.error(error);
+/**
+ * Convert a captured recording into overlapping valid sequence windows.
+ * @param {(object | null)[]} recording The fixed-rate frame-clock sample list.
+ * @returns {{windows: number[][], dropped: number}} Accepted and rejected window counts.
+ */
+function sliceRecording(recording) {
+  const windows = [];
+  let dropped = 0;
+  for (
+    let start = 0;
+    start + config.sequence_length <= recording.length;
+    start += WINDOW_STRIDE
+  ) {
+    const window = recording.slice(start, start + config.sequence_length);
+    if (window.some((frame) => frame === null)) {
+      dropped += 1;
+      continue;
+    }
+    windows.push(buildWindow(window));
   }
+  return { windows, dropped };
 }
 
-/** Refresh the visible sample counts from the server. */
+/** Finish recording, retain valid windows, and update the UI. */
+function finishRecording() {
+  isRecording = false;
+  recordingCount += 1;
+  const { windows, dropped } = sliceRecording(captureFrames);
+  samples.push(...windows);
+  updateCollectionStats();
+  recordButton.disabled = false;
+  saveButton.disabled = samples.length === 0;
+  message.textContent =
+    `RECORDING ${recordingCount}: ${windows.length} WINDOWS KEPT, ` +
+    `${dropped} DROPPED (HAND LOST). REPEAT THE SIGN 2-3 TIMES DURING EACH RECORDING.`;
+}
+
+/**
+ * Delay countdown stages by one second each.
+ * @param {number} milliseconds Delay length.
+ * @returns {Promise<void>} Resolves after the delay.
+ */
+function wait(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+/**
+ * Start the countdown and collect one three-second sample-clock recording.
+ */
+async function beginRecording() {
+  const label = labelInput.value.trim();
+  if (!/^[A-Za-z0-9_-]+$/.test(label)) {
+    message.textContent = "ENTER A LABEL USING ONLY LETTERS, NUMBERS, DASHES, OR UNDERSCORES.";
+    return;
+  }
+  if (!frameClock) {
+    message.textContent = "WAIT FOR THE CAMERA AND CONFIGURATION TO START.";
+    return;
+  }
+
+  if (!sampleLabel) {
+    sampleLabel = label;
+    collectorNameForBatch = collectorName.value.trim();
+    collectorName.disabled = true;
+    labelInput.disabled = true;
+  } else if (sampleLabel !== label) {
+    message.textContent = "SAVE OR DISCARD THIS LABEL'S WINDOWS BEFORE CHANGING LABEL.";
+    return;
+  }
+
+  recordButton.disabled = true;
+  saveButton.disabled = true;
+  captureFrames = [];
+  for (let remaining = COUNTDOWN_SECONDS; remaining > 0; remaining -= 1) {
+    message.textContent = `STARTING IN ${remaining}... REPEAT THE SIGN 2-3 TIMES DURING RECORDING.`;
+    await wait(1000);
+  }
+
+  isRecording = true;
+  message.textContent = "RECORDING... REPEAT THE SIGN 2-3 TIMES.";
+  updateProgress();
+}
+
+/** Refresh the visible sample-window counts from the server. */
 async function refreshSummary() {
   const counts = await fetchJson("/api/samples/summary");
   summaryList.replaceChildren();
@@ -73,41 +152,18 @@ async function refreshSummary() {
     summaryList.textContent = "NO SAMPLES SAVED YET.";
     return;
   }
-  labels.forEach(([label, counts]) => {
+  labels.forEach(([label, labelCounts]) => {
     const item = document.createElement("li");
-    item.textContent = `${label}: ${counts.samples} SAMPLES / ${counts.sessions} SESS`;
+    item.textContent =
+      `${label}: ${labelCounts.samples} WINDOWS / ${labelCounts.sessions} SESS`;
     summaryList.append(item);
   });
 }
 
-/** Validate the chosen label and begin capturing hand frames. */
-function beginRecording() {
-  const label = labelInput.value.trim();
-  if (!/^[A-Za-z0-9_-]+$/.test(label)) {
-    message.textContent = "ENTER A LABEL USING ONLY LETTERS, NUMBERS, DASHES, OR UNDERSCORES.";
-    return;
-  }
-  if (!video.srcObject) {
-    message.textContent = "WAIT FOR THE CAMERA TO START BEFORE RECORDING.";
-    return;
-  }
-
-  samples = [];
-  sampleLabel = label;
-  collectorNameForBatch = collectorName.value.trim();
-  isRecording = true;
-  collectorName.disabled = true;
-  labelInput.disabled = true;
-  recordButton.disabled = true;
-  saveButton.disabled = true;
-  updateProgress();
-  message.textContent = "RECORDING: HOLD ONE HAND IN VIEW.";
-}
-
-/** Submit the recorded sample batch and refresh the saved-count summary. */
+/** Save every valid window collected for this label as one session. */
 async function saveSamples() {
   saveButton.disabled = true;
-  message.textContent = "SAVING SAMPLES...";
+  message.textContent = "SAVING WINDOWS...";
   try {
     const safeName = collectorNameForBatch.replace(/[^A-Za-z0-9_-]/g, "") || "anonymous";
     const session = `${safeName}-${Date.now()}`.replace(/[^A-Za-z0-9_-]/g, "");
@@ -116,11 +172,16 @@ async function saveSamples() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ label: sampleLabel, samples, session }),
     });
-    message.textContent = `SAVED ${samples.length} SAMPLES FOR "${result.label}". TOTAL: ${result.samples} SAMPLES ACROSS ${result.sessions} SESSIONS.`;
+    message.textContent =
+      `SAVED ${samples.length} WINDOWS FOR "${result.label}". ` +
+      `TOTAL: ${result.samples} WINDOWS ACROSS ${result.sessions} SESSIONS.`;
     samples = [];
     sampleLabel = "";
     collectorNameForBatch = "";
-    updateProgress();
+    recordingCount = 0;
+    captureFrames = [];
+    progress.textContent = "0 / 0 TICKS";
+    updateCollectionStats();
     collectorName.disabled = false;
     labelInput.disabled = false;
     recordButton.disabled = false;
@@ -128,7 +189,7 @@ async function saveSamples() {
       await refreshSummary();
     } catch (summaryError) {
       console.error(summaryError);
-      message.textContent += ` SAMPLE SUMMARY COULD NOT BE REFRESHED: ${summaryError.message}`;
+      message.textContent += ` SUMMARY COULD NOT BE REFRESHED: ${summaryError.message}`;
     }
   } catch (error) {
     console.error(error);
@@ -152,6 +213,29 @@ async function refreshServerStatus() {
   }
 }
 
+/** Load shared feature config, start tracking, and begin fixed-rate sampling. */
+async function initialiseCollector() {
+  try {
+    config = await fetchJson("/api/config");
+    configureLandmarks(config);
+    frameClock = new FrameClock(config.sample_rate_hz, handleClockTick);
+    await startHandTracking({
+      video,
+      overlay,
+      onHands: (hands) => frameClock.updateHands(hands),
+      onStatus: (status) => {
+        statusPill.textContent = status.toUpperCase();
+      },
+    });
+    frameClock.start();
+    progress.textContent = `0 / ${config.sample_rate_hz * COLLECTION_DURATION_SECONDS} TICKS`;
+  } catch (error) {
+    console.error(error);
+    statusPill.textContent = "CAMERA UNAVAILABLE";
+    message.textContent = error.message;
+  }
+}
+
 recordButton.addEventListener("click", beginRecording);
 saveButton.addEventListener("click", saveSamples);
 refreshSummary().catch((error) => {
@@ -160,4 +244,4 @@ refreshSummary().catch((error) => {
 });
 refreshServerStatus();
 window.setInterval(refreshServerStatus, HEALTH_CHECK_INTERVAL_MS);
-window.addEventListener("DOMContentLoaded", startCamera);
+window.addEventListener("DOMContentLoaded", initialiseCollector);

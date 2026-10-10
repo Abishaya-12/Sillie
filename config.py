@@ -6,6 +6,11 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+SEQUENCE_LENGTH = 30
+SAMPLE_RATE_HZ = 30
+FEATURES_PER_FRAME = 66
+IDLE_LABEL = "idle"
+
 
 @dataclass
 class Settings:

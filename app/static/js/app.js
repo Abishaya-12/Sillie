@@ -1,14 +1,15 @@
 "use strict";
 
 import { fetchJson } from "./api.js";
+import { FrameClock } from "./frame-clock.js";
 import { startHandTracking } from "./hand-tracking.js";
-import { normalizeLandmarks } from "./landmarks.js";
+import { buildWindow, configureLandmarks } from "./landmarks.js";
 import { PredictionStabilizer } from "./stabilizer.js";
 
-const REQUIRED_STABLE_PREDICTIONS = 8;
-const MIN_PREDICTION_CONFIDENCE = 0.85;
+const REQUIRED_STABLE_PREDICTIONS = 3;
+const MIN_PREDICTION_CONFIDENCE = 0.8;
 const DUPLICATE_COMMIT_WINDOW_MS = 1500;
-const MIN_PREDICTION_INTERVAL_MS = 100;
+const MIN_PREDICTION_INTERVAL_MS = 150;
 const MODEL_STATUS_INTERVAL_MS = 10000;
 const REQUIRED_HAND_COUNT = 1;
 const NO_MODEL_ERROR = "No trained model found. Run `python -m ml.train` first.";
@@ -26,6 +27,9 @@ const undoButton = document.getElementById("undo-button");
 const autoSpeak = document.getElementById("auto-speak");
 const speakButton = document.getElementById("speak-button");
 
+let config = null;
+let frameClock = null;
+let frameBuffer = [];
 const stabilizer = new PredictionStabilizer({
   requiredCount: REQUIRED_STABLE_PREDICTIONS,
   minConfidence: MIN_PREDICTION_CONFIDENCE,
@@ -70,15 +74,30 @@ function renderPrediction(label, confidence) {
 }
 
 /**
+ * Display buffer fill or the current model-ready state.
+ */
+function renderListeningStatus() {
+  if (!config) {
+    return;
+  }
+  if (frameBuffer.length < config.sequence_length) {
+    predictionStatus.textContent =
+      `LISTENING ${frameBuffer.length}/${config.sequence_length}`;
+    return;
+  }
+  predictionStatus.textContent = modelAvailable
+    ? `LISTENING ${frameBuffer.length}/${config.sequence_length}`
+    : "TRAIN A MODEL FIRST";
+}
+
+/**
  * Check model availability without requesting a prediction.
  */
 async function refreshModelStatus() {
   try {
     const status = await fetchJson("/api/model/status");
     modelAvailable = Array.isArray(status.labels) && status.labels.length > 0;
-    predictionStatus.textContent = modelAvailable
-      ? "MODEL READY"
-      : "TRAIN A MODEL FIRST";
+    renderListeningStatus();
   } catch (error) {
     console.error(error);
     predictionStatus.textContent = "CANNOT CHECK MODEL STATUS";
@@ -114,9 +133,9 @@ function handleStablePrediction(label, confidence) {
 
 /**
  * Request a prediction when the interval and single-flight constraints allow.
- * @param {{x: number, y: number, z: number}[]} landmarks One hand's 21 landmarks.
+ * @param {{shape: number[], wrist: [number, number, number], scale: number}[]} frames One buffered feature window.
  */
-async function requestPrediction(landmarks) {
+async function requestPrediction(frames) {
   if (!modelAvailable || predictionInFlight) {
     return;
   }
@@ -133,18 +152,22 @@ async function requestPrediction(landmarks) {
     const prediction = await fetchJson("/api/predict", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ features: normalizeLandmarks(landmarks) }),
+      body: JSON.stringify({ window: buildWindow(frames) }),
     });
     if (!handPresent || requestGeneration !== handPresenceGeneration) {
       return;
     }
     renderPrediction(prediction.label, prediction.confidence);
-    handleStablePrediction(prediction.label, prediction.confidence);
+    if (prediction.label.toLowerCase() === config.idle_label.toLowerCase()) {
+      stabilizer.resetPending();
+    } else {
+      handleStablePrediction(prediction.label, prediction.confidence);
+    }
   } catch (error) {
     stabilizer.reset();
     if (error.message.includes(NO_MODEL_ERROR)) {
       modelAvailable = false;
-      predictionStatus.textContent = "TRAIN A MODEL FIRST";
+      renderListeningStatus();
       renderPrediction(null, 0);
     } else {
       console.error(error);
@@ -156,21 +179,35 @@ async function requestPrediction(landmarks) {
 }
 
 /**
- * Update tracking behavior and request predictions from hand-tracking results.
- * @param {{x: number, y: number, z: number}[][]} hands Detected hand landmarks.
+ * Store one fixed-clock frame, reset on missing hands, and predict full windows.
+ * @param {{shape: number[], wrist: [number, number, number], scale: number} | null} frame Fixed-rate clock frame.
  */
-function handleHands(hands) {
-  if (hands.length !== REQUIRED_HAND_COUNT) {
+function handleClockTick(frame) {
+  if (frame === null) {
     if (handPresent) {
       handPresenceGeneration += 1;
     }
     handPresent = false;
+    frameBuffer = [];
     stabilizer.reset();
     renderPrediction(null, 0);
+    renderListeningStatus();
     return;
   }
+
   handPresent = true;
-  void requestPrediction(hands[0]);
+  frameBuffer.push(frame);
+  if (frameBuffer.length > config.sequence_length) {
+    frameBuffer.shift();
+  }
+  renderListeningStatus();
+  if (
+    frameBuffer.length === config.sequence_length
+    && !predictionInFlight
+    && performance.now() - lastPredictionAt >= MIN_PREDICTION_INTERVAL_MS
+  ) {
+    void requestPrediction(frameBuffer.slice());
+  }
 }
 
 /**
@@ -178,17 +215,25 @@ function handleHands(hands) {
  */
 async function initialiseCamera() {
   try {
+    config = await fetchJson("/api/config");
+    configureLandmarks(config);
+    frameClock = new FrameClock(config.sample_rate_hz, handleClockTick);
+    await refreshModelStatus();
     await startHandTracking({
       video,
       overlay,
-      onHands: handleHands,
+      onHands: (hands) => {
+        frameClock.updateHands(hands.length === REQUIRED_HAND_COUNT ? hands : []);
+      },
       onStatus: (status) => {
         statusPill.textContent = status.toUpperCase();
       },
     });
+    frameClock.start();
   } catch (error) {
     console.error(error);
     statusPill.textContent = "CAMERA UNAVAILABLE";
+    predictionStatus.textContent = error.message.toUpperCase();
   }
 }
 

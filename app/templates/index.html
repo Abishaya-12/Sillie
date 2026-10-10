@@ -50,6 +50,7 @@
             >
               <div id="confidence-fill" class="confidence-fill"></div>
             </div>
+            <p id="top-guesses" class="label" aria-live="polite"></p>
           </div>
         </div>
 
@@ -79,6 +80,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js" defer></script>
     <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
   </body>
 </html>

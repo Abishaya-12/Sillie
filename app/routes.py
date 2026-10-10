@@ -12,7 +12,9 @@ from flask import Blueprint, Response, current_app, jsonify, render_template, re
 
 from config import (
     FEATURES_PER_FRAME,
+    FEATURE_VERSION,
     IDLE_LABEL,
+    RAW_FRAME_SIZE,
     SAMPLE_RATE_HZ,
     SEQUENCE_LENGTH,
 )
@@ -46,14 +48,16 @@ def api_config() -> Response:
     return jsonify({
         "sequence_length": SEQUENCE_LENGTH,
         "sample_rate_hz": SAMPLE_RATE_HZ,
+        "raw_frame_size": RAW_FRAME_SIZE,
         "features_per_frame": FEATURES_PER_FRAME,
         "idle_label": IDLE_LABEL,
+        "feature_version": FEATURE_VERSION,
     })
 
 
 @blueprint.route("/api/samples", methods=["POST"])
 def save_samples() -> tuple[Response, int]:
-    """Validate and append normalized hand samples to the label CSV."""
+    """Validate and append raw hand-and-pose sequence windows to session storage."""
     payload: Any = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"error": "Request body must be a JSON object."}), 400
@@ -71,14 +75,14 @@ def save_samples() -> tuple[Response, int]:
         }), 400
 
     samples = normalize_sample_rows(
-        payload.get("samples"), SEQUENCE_LENGTH * FEATURES_PER_FRAME
+        payload.get("samples"), SEQUENCE_LENGTH * RAW_FRAME_SIZE
     )
     if samples is None:
         return jsonify({
             "error": (
                 "samples must be a list of rows with exactly "
-                f"{SEQUENCE_LENGTH * FEATURES_PER_FRAME} finite numbers. "
-                "The format changed; re-record samples using the current sequence collector."
+                f"{SEQUENCE_LENGTH * RAW_FRAME_SIZE} finite numbers. "
+                "The format changed to raw hand-and-pose sequences; re-record samples."
             )
         }), 400
 
@@ -90,7 +94,7 @@ def save_samples() -> tuple[Response, int]:
         csv.writer(csv_file).writerows(samples)
 
     total_samples, session_count = count_label_samples(
-        data_dir, label, SEQUENCE_LENGTH * FEATURES_PER_FRAME
+        data_dir, label, SEQUENCE_LENGTH * RAW_FRAME_SIZE
     )
     return jsonify({
         "label": label,
@@ -119,7 +123,7 @@ def sample_summary() -> Response:
     counts = {
         label: dict(zip(
             ("samples", "sessions"),
-            count_label_samples(data_dir, label, SEQUENCE_LENGTH * FEATURES_PER_FRAME),
+            count_label_samples(data_dir, label, SEQUENCE_LENGTH * RAW_FRAME_SIZE),
         ))
         for label in sorted(labels)
     }
@@ -128,30 +132,33 @@ def sample_summary() -> Response:
 
 @blueprint.route("/api/predict", methods=["POST"])
 def predict_sign() -> tuple[Response, int]:
-    """Validate landmark features and return the classifier's prediction."""
+    """Validate a raw landmark sequence and return ranked sign predictions."""
     payload: Any = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"error": "Request body must be a JSON object."}), 400
 
     if "features" in payload:
         return jsonify({
-            "error": "The prediction format changed: send a sequence in the 'window' field."
+            "error": (
+                "The prediction format changed to raw hand-and-pose sequences; "
+                f"send a {SEQUENCE_LENGTH * RAW_FRAME_SIZE}-value window in the 'window' field."
+            )
         }), 400
 
-    window = normalize_feature_vector(
-        payload.get("window"), SEQUENCE_LENGTH * FEATURES_PER_FRAME
+    window = normalize_raw_window(
+        payload.get("window"), SEQUENCE_LENGTH * RAW_FRAME_SIZE
     )
     if window is None:
         return jsonify({
             "error": (
                 "window must be a list of exactly "
-                f"{SEQUENCE_LENGTH * FEATURES_PER_FRAME} finite numbers."
+                f"{SEQUENCE_LENGTH * RAW_FRAME_SIZE} finite numbers."
             )
         }), 400
 
     classifier: SignClassifier = current_app.extensions["sign_classifier"]
     try:
-        label, confidence = classifier.predict(window)
+        predictions = classifier.predict(window)
     except ModelNotFoundError:
         return jsonify({
             "error": "No trained model found. Run `python -m ml.train` first."
@@ -170,7 +177,17 @@ def predict_sign() -> tuple[Response, int]:
         return jsonify({"error": str(error)}), 503
     except ValueError as error:
         return jsonify({"error": str(error)}), 503
-    return jsonify({"label": label, "confidence": confidence}), 200
+    if not predictions:
+        return jsonify({"error": "The classifier returned no predictions."}), 503
+    top = [
+        {"label": label, "confidence": confidence}
+        for label, confidence in predictions
+    ]
+    return jsonify({
+        "label": top[0]["label"],
+        "confidence": top[0]["confidence"],
+        "top": top,
+    }), 200
 
 
 @blueprint.route("/api/model/status")
@@ -178,7 +195,13 @@ def model_status() -> Response:
     """Report cached model state and labels without loading model dependencies."""
     classifier: SignClassifier = current_app.extensions["sign_classifier"]
     loaded, labels = classifier.status()
-    return jsonify({"loaded": loaded, "labels": labels})
+    configuration_error = classifier.configuration_error()
+    return jsonify({
+        "loaded": loaded,
+        "labels": labels,
+        "compatible": configuration_error is None,
+        "error": configuration_error,
+    })
 
 
 def is_valid_label(label: object) -> TypeGuard[str]:
@@ -203,10 +226,10 @@ def normalize_sample_rows(
     return rows
 
 
-def normalize_feature_vector(
+def normalize_raw_window(
     features: object, expected_length: int
 ) -> list[float] | None:
-    """Validate and normalize one configured sequence feature vector."""
+    """Validate and convert one flat raw landmark sequence to Python floats."""
     if not isinstance(features, list) or len(features) != expected_length:
         return None
     if any(not is_finite_number(value) for value in features):

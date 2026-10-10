@@ -3,7 +3,7 @@
 import { fetchJson } from "./api.js";
 import { FrameClock } from "./frame-clock.js";
 import { startHandTracking } from "./hand-tracking.js";
-import { buildWindow, configureLandmarks } from "./landmarks.js";
+import { flattenWindow } from "./landmarks.js";
 import { PredictionStabilizer } from "./stabilizer.js";
 
 const REQUIRED_STABLE_PREDICTIONS = 3;
@@ -11,7 +11,6 @@ const MIN_PREDICTION_CONFIDENCE = 0.8;
 const DUPLICATE_COMMIT_WINDOW_MS = 1500;
 const MIN_PREDICTION_INTERVAL_MS = 150;
 const MODEL_STATUS_INTERVAL_MS = 10000;
-const REQUIRED_HAND_COUNT = 1;
 const NO_MODEL_ERROR = "No trained model found. Run `python -m ml.train` first.";
 
 const video = document.getElementById("camera");
@@ -20,6 +19,7 @@ const transcript = document.getElementById("transcript");
 const statusPill = document.querySelector(".status-pill");
 const predictionStatus = document.getElementById("prediction-status");
 const currentGuess = document.getElementById("current-guess");
+const topGuesses = document.getElementById("top-guesses");
 const confidenceTrack = document.getElementById("confidence-track");
 const confidenceFill = document.getElementById("confidence-fill");
 const clearButton = document.getElementById("clear-button");
@@ -39,6 +39,7 @@ const committedWords = [];
 let predictionInFlight = false;
 let lastPredictionAt = Number.NEGATIVE_INFINITY;
 let modelAvailable = false;
+let modelIncompatible = false;
 let handPresent = false;
 let handPresenceGeneration = 0;
 
@@ -60,6 +61,7 @@ function renderTranscript() {
 function renderPrediction(label, confidence) {
   if (!label) {
     currentGuess.textContent = "Waiting for a hand...";
+    topGuesses.textContent = "";
     confidenceFill.style.width = "0%";
     confidenceFill.dataset.level = "low";
     confidenceTrack.setAttribute("aria-valuenow", "0");
@@ -74,10 +76,24 @@ function renderPrediction(label, confidence) {
 }
 
 /**
+ * Render the top model alternatives under the confidence bar.
+ * @param {{label: string, confidence: number}[]} predictions Ranked predictions.
+ */
+function renderTopGuesses(predictions) {
+  topGuesses.textContent = predictions
+    .map(({ label, confidence }) => `${label.toUpperCase()} ${Math.round(confidence * 100)}`)
+    .join(" / ");
+}
+
+/**
  * Display buffer fill or the current model-ready state.
  */
 function renderListeningStatus() {
   if (!config) {
+    return;
+  }
+  if (modelIncompatible) {
+    predictionStatus.textContent = "RECORD RAW DATA AND RETRAIN MODEL";
     return;
   }
   if (frameBuffer.length < config.sequence_length) {
@@ -96,7 +112,9 @@ function renderListeningStatus() {
 async function refreshModelStatus() {
   try {
     const status = await fetchJson("/api/model/status");
-    modelAvailable = Array.isArray(status.labels) && status.labels.length > 0;
+    modelIncompatible = status.compatible === false;
+    modelAvailable =
+      !modelIncompatible && Array.isArray(status.labels) && status.labels.length > 0;
     renderListeningStatus();
   } catch (error) {
     console.error(error);
@@ -133,7 +151,7 @@ function handleStablePrediction(label, confidence) {
 
 /**
  * Request a prediction when the interval and single-flight constraints allow.
- * @param {{shape: number[], wrist: [number, number, number], scale: number}[]} frames One buffered feature window.
+ * @param {number[][]} frames One raw hand-and-pose window.
  */
 async function requestPrediction(frames) {
   if (!modelAvailable || predictionInFlight) {
@@ -152,12 +170,13 @@ async function requestPrediction(frames) {
     const prediction = await fetchJson("/api/predict", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ window: buildWindow(frames) }),
+      body: JSON.stringify({ window: flattenWindow(frames, config) }),
     });
     if (!handPresent || requestGeneration !== handPresenceGeneration) {
       return;
     }
     renderPrediction(prediction.label, prediction.confidence);
+    renderTopGuesses(prediction.top || []);
     if (prediction.label.toLowerCase() === config.idle_label.toLowerCase()) {
       stabilizer.resetPending();
     } else {
@@ -169,6 +188,10 @@ async function requestPrediction(frames) {
       modelAvailable = false;
       renderListeningStatus();
       renderPrediction(null, 0);
+    } else if (error.message.includes("incompatible feature format")) {
+      modelAvailable = false;
+      modelIncompatible = true;
+      renderListeningStatus();
     } else {
       console.error(error);
       predictionStatus.textContent = error.message;
@@ -180,7 +203,7 @@ async function requestPrediction(frames) {
 
 /**
  * Store one fixed-clock frame, reset on missing hands, and predict full windows.
- * @param {{shape: number[], wrist: [number, number, number], scale: number} | null} frame Fixed-rate clock frame.
+ * @param {number[] | null} frame Fixed-rate raw landmark frame.
  */
 function handleClockTick(frame) {
   if (frame === null) {
@@ -216,15 +239,11 @@ function handleClockTick(frame) {
 async function initialiseCamera() {
   try {
     config = await fetchJson("/api/config");
-    configureLandmarks(config);
-    frameClock = new FrameClock(config.sample_rate_hz, handleClockTick);
+    frameClock = new FrameClock(config, handleClockTick);
     await refreshModelStatus();
     await startHandTracking({
       video,
       overlay,
-      onHands: (hands) => {
-        frameClock.updateHands(hands.length === REQUIRED_HAND_COUNT ? hands : []);
-      },
       onStatus: (status) => {
         statusPill.textContent = status.toUpperCase();
       },

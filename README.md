@@ -35,13 +35,20 @@ pip install -r requirements.txt
 python server.py
 ```
 
-For model training or offline landmark processing, install the ML extras separately:
+For model training and server inference, install the ML extras separately:
 
 ```bash
 pip install -r requirements-ml.txt
 ```
 
-The ML requirements include scikit-learn for session-aware splits and confusion-matrix evaluation. Training keeps sessions separate between train, validation, and test where each label has at least three sessions. Otherwise, it warns and falls back to a stratified window-level split, whose accuracy may be optimistic.
+The ML requirements include scikit-learn for session-aware splits and evaluation. Install pytest to run the feature tests:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Training keeps sessions separate between train, validation, and test. It reports per-class metrics and the most common confusions.
 
 ```bash
 python -m ml.train
@@ -57,12 +64,12 @@ For an offline demo, download the Press Start 2P and VT323 font files into `app/
 
 ## Collecting data
 
-Open `http://127.0.0.1:5000/collect`, optionally enter your name, and enter a label using letters, numbers, dashes, or underscores. Record each sign as a short motion: the page counts down, samples at the configured 30 Hz, then captures a three-second recording and saves valid overlapping sequence windows. Repeat each sign 2-3 times per recording; collect at least three separate recordings per label and include data from at least two people. Record an `idle` label too (hand resting or moving randomly) so the model has a background class. **Save samples** stores the collected windows in `data/<label>/<session>.csv`.
+Open `http://127.0.0.1:5000/collect`, optionally enter your name, and enter a label using letters, numbers, dashes, or underscores. Sit far enough back that your full head and both shoulders remain visible, and keep a consistent distance from the camera. Each recording samples raw MediaPipe hand and pose coordinates at the configured 30 Hz, then creates overlapping one-second windows. Repeat each sign 2-3 times per recording; collect at least three separate recordings per sign from at least two people. Record an `idle` label too (hand resting or moving randomly). **Save samples** stores raw windows in `data/<label>/<session>.csv`.
 
-The model now expects 30 frames × 66 features per frame. Old single-frame data and files with the previous format are skipped by training; delete old 63-value CSVs (including old `data/<label>/<session>.csv` files) or re-record them with the sequence collector before training. Set `SILLIE_DATA_DIR` to use a different dataset directory.
+This pipeline computes body-aware features from raw hand and pose windows in `ml/features.py`. Delete or move the old `data/` folder before collecting; old single-frame and 66-feature sequence rows are not compatible with this raw format. Training skips incompatible CSV files with a warning. Set `SILLIE_DATA_DIR` to use a different dataset directory.
 
-Workflow: collect several sessions for each label at `/collect`, install the ML dependencies, run `python -m ml.train`, then start the app with `python server.py` and test live translation at `/`.
+Workflow: collect raw hand-and-pose windows for each label at `/collect`, install the ML dependencies, run `python -m ml.train`, then start the app with the same Python environment (`.venv\Scripts\python.exe server.py` on Windows) and test live translation at `/`.
 
 ## Current status
 
-The webcam hand-tracking page, sequence data collection, GRU training, and live sequence prediction are in place.
+The webcam hand-and-pose tracking page, raw sequence collection, body-aware feature extraction, and Conv1D-GRU training and prediction are in place.

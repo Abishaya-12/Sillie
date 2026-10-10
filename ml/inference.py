@@ -1,4 +1,4 @@
-"""Lazy inference for trained Sillie sequence classifiers."""
+"""Lazy inference for the trained body-aware sequence classifier."""
 
 from __future__ import annotations
 
@@ -11,9 +11,15 @@ from typing import Any
 
 import numpy as np
 
-from config import FEATURES_PER_FRAME, SEQUENCE_LENGTH
+from config import (
+    FEATURES_PER_FRAME,
+    FEATURE_VERSION,
+    RAW_FRAME_SIZE,
+    SEQUENCE_LENGTH,
+)
+from ml.features import window_features
 
-FEATURE_COUNT = SEQUENCE_LENGTH * FEATURES_PER_FRAME
+RAW_WINDOW_SIZE = SEQUENCE_LENGTH * RAW_FRAME_SIZE
 
 
 class ModelNotFoundError(FileNotFoundError):
@@ -21,14 +27,14 @@ class ModelNotFoundError(FileNotFoundError):
 
 
 class ModelConfigurationError(ValueError):
-    """Raised when model metadata is incompatible with current input dimensions."""
+    """Raised when saved model metadata differs from this feature pipeline."""
 
 
 class SignClassifier:
-    """Load and cache the trained sequence model only when prediction is needed."""
+    """Load and cache the Keras model only when a prediction is requested."""
 
     def __init__(self, model_dir: Path) -> None:
-        """Create an unloaded classifier using the configured model directory."""
+        """Create an unloaded classifier using the supplied model directory."""
         self._model_dir = model_dir
         self._model: Any | None = None
         self._labels: list[str] | None = None
@@ -36,63 +42,80 @@ class SignClassifier:
 
     @property
     def model_path(self) -> Path:
-        """Return the trained Keras model path."""
+        """Return the trained model path."""
         return self._model_dir / "sign_model.keras"
 
     @property
     def labels_path(self) -> Path:
-        """Return the class-label JSON path."""
+        """Return the class-label list path."""
         return self._model_dir / "labels.json"
 
     @property
     def metadata_path(self) -> Path:
-        """Return the model input metadata path."""
+        """Return the feature metadata path."""
         return self._model_dir / "meta.json"
 
-    def predict(self, window: list[float]) -> tuple[str, float]:
-        """Return the most likely label and probability for one input sequence."""
-        if len(window) != FEATURE_COUNT or any(
+    def predict(self, window: list[float]) -> list[tuple[str, float]]:
+        """Return the top three label scores for one flat raw sequence window."""
+        if len(window) != RAW_WINDOW_SIZE or any(
             isinstance(value, bool)
             or not isinstance(value, (int, float))
             or not math.isfinite(value)
             for value in window
         ):
             raise ValueError(
-                f"window must contain exactly {FEATURE_COUNT} finite numbers."
+                f"window must contain exactly {RAW_WINDOW_SIZE} finite raw coordinates."
             )
 
         self._ensure_loaded()
-        input_window = np.asarray(window, dtype=np.float32).reshape(
-            1, SEQUENCE_LENGTH, FEATURES_PER_FRAME
+        raw_window = np.asarray(window, dtype=np.float32).reshape(
+            SEQUENCE_LENGTH, RAW_FRAME_SIZE
         )
-        probabilities = self._model.predict(input_window, verbose=0)[0]
-        class_index = int(probabilities.argmax())
-        return self._labels[class_index], float(probabilities[class_index])
+        features = window_features(raw_window)[None, ...]
+        probabilities = np.asarray(
+            self._model.predict(features, verbose=0)[0], dtype=np.float64
+        )
+        if probabilities.ndim != 1 or len(probabilities) != len(self._labels):
+            raise ValueError("The model output count does not match its labels.json file.")
+        top_indices = np.argsort(probabilities)[::-1][: min(3, len(self._labels))]
+        return [
+            (self._labels[int(index)], float(probabilities[index]))
+            for index in top_indices
+        ]
 
     def status(self) -> tuple[bool, list[str]]:
-        """Return cached model state and labels without importing TensorFlow."""
-        if not all(
-            path.is_file()
-            for path in (self.model_path, self.labels_path, self.metadata_path)
-        ):
+        """Report artifact availability without importing TensorFlow."""
+        required = (self.model_path, self.labels_path, self.metadata_path)
+        if not all(path.is_file() for path in required):
             return False, []
         if self._labels is None:
             self._labels = self._read_labels()
         return self._model is not None, list(self._labels)
 
+    def configuration_error(self) -> str | None:
+        """Return an incompatibility reason without loading TensorFlow, if any."""
+        if not all(
+            path.is_file() for path in (self.model_path, self.labels_path, self.metadata_path)
+        ):
+            return None
+        try:
+            self._validate_metadata()
+        except ModelConfigurationError as error:
+            return str(error)
+        return None
+
     def _ensure_loaded(self) -> None:
-        """Load the model once, validating its saved input metadata first."""
+        """Validate metadata and load the Keras model once, on first prediction."""
         if self._model is not None:
             return
         with self._load_lock:
             if self._model is not None:
                 return
-            required_files = (self.model_path, self.labels_path, self.metadata_path)
-            if not all(path.is_file() for path in required_files):
+            required = (self.model_path, self.labels_path, self.metadata_path)
+            if not all(path.is_file() for path in required):
                 raise ModelNotFoundError(
-                    f"Trained model, labels, and metadata are required in {self._model_dir}."
+                    f"Trained model artifacts are missing from {self._model_dir}."
                 )
-
             self._validate_metadata()
             labels = self._read_labels()
             tensorflow = importlib.import_module("tensorflow")
@@ -101,27 +124,29 @@ class SignClassifier:
             self._model = model
 
     def _validate_metadata(self) -> None:
-        """Raise a clear error if saved dimensions differ from current config."""
+        """Reject model files trained against another raw/feature representation."""
         try:
             metadata = json.loads(self.metadata_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise ModelConfigurationError(
-                f"Could not read sequence metadata from {self.metadata_path}; retrain the model."
+                f"Could not read feature metadata from {self.metadata_path}; retrain the model."
             ) from error
         expected = {
             "sequence_length": SEQUENCE_LENGTH,
+            "raw_frame_size": RAW_FRAME_SIZE,
             "features_per_frame": FEATURES_PER_FRAME,
+            "feature_version": FEATURE_VERSION,
         }
         if not isinstance(metadata, dict) or any(
             metadata.get(key) != value for key, value in expected.items()
         ):
             raise ModelConfigurationError(
-                "The trained model's sequence dimensions do not match the current "
-                "configuration. Run `python -m ml.train` to retrain it."
+                "The trained model uses an incompatible feature format. "
+                "Collect raw hand-and-pose windows and run `python -m ml.train` again."
             )
 
     def _read_labels(self) -> list[str]:
-        """Read and validate class labels from model metadata."""
+        """Read and validate class labels from labels.json."""
         try:
             labels = json.loads(self.labels_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
@@ -131,5 +156,5 @@ class SignClassifier:
             or not labels
             or any(not isinstance(label, str) or not label for label in labels)
         ):
-            raise ValueError(f"Model labels in {self.labels_path} must be a non-empty string list.")
+            raise ValueError(f"Labels in {self.labels_path} must be a non-empty string list.")
         return labels

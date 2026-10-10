@@ -1,4 +1,4 @@
-"""Train and evaluate a sequence-based Sillie sign classifier."""
+"""Train, evaluate, and save the body-aware sequence classifier."""
 
 from __future__ import annotations
 
@@ -10,70 +10,36 @@ from typing import TYPE_CHECKING
 import numpy as np
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 from sklearn.model_selection import GroupShuffleSplit, train_test_split
+from sklearn.utils.class_weight import compute_class_weight
 
 from config import (
     FEATURES_PER_FRAME,
+    FEATURE_VERSION,
     IDLE_LABEL,
+    RAW_FRAME_SIZE,
     SEQUENCE_LENGTH,
     config,
 )
+from ml.features import window_features
 
 if TYPE_CHECKING:
     import tensorflow as tf
 
 RANDOM_SEED = 42
-FEATURE_COUNT = SEQUENCE_LENGTH * FEATURES_PER_FRAME
-WRIST_OFFSET_START = FEATURES_PER_FRAME - 3
-NOISE_STANDARD_DEVIATION = 0.01
-WRIST_SCALE_MIN = 0.9
-WRIST_SCALE_MAX = 1.1
-
-
-def load_dataset(
-    data_dir: Path,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
-    """Load valid per-session sequence rows and return features, labels, and groups."""
-    label_files = collect_label_files(data_dir)
-    features: list[np.ndarray] = []
-    label_names: list[str] = []
-    group_names: list[str] = []
-    labels: list[str] = []
-
-    for label in sorted(label_files):
-        label_windows: list[np.ndarray] = []
-        label_groups: list[str] = []
-        for csv_file, session_id in label_files[label]:
-            windows = load_sequence_file(csv_file)
-            if windows is None:
-                continue
-            label_windows.extend(windows)
-            label_groups.extend([f"{label}:{session_id}"] * len(windows))
-        if label_windows:
-            class_id = len(labels)
-            labels.append(label)
-            features.extend(label_windows)
-            label_names.extend([str(class_id)] * len(label_windows))
-            group_names.extend(label_groups)
-
-    if len(labels) < 2:
-        raise ValueError("At least two labels with valid sequence files are required.")
-
-    class_ids = np.asarray(label_names, dtype=np.int64)
-    groups = np.asarray(group_names, dtype=str)
-    print_label_counts(labels, class_ids, groups)
-    if IDLE_LABEL not in labels:
-        print(f"WARNING: No '{IDLE_LABEL}' label was found; the model cannot reject idle signs.")
-    return np.stack(features), class_ids, groups, labels
+RAW_WINDOW_SIZE = SEQUENCE_LENGTH * RAW_FRAME_SIZE
+AUGMENTATION_NOISE_STD = 0.003
+MAX_AUGMENTATION_SHIFT = 3
+AUGMENTATION_JITTER = 0.03
 
 
 def collect_label_files(data_dir: Path) -> dict[str, list[tuple[Path, str]]]:
-    """Find per-session CSV files and warn about unsupported flat legacy files."""
+    """Find per-session sample CSV files and warn about flat legacy files."""
     label_files: dict[str, list[tuple[Path, str]]] = {}
     if not data_dir.exists():
         return label_files
 
     for legacy_file in sorted(data_dir.glob("*.csv")):
-        print(f"WARNING: Skipping legacy single-frame file: {legacy_file}")
+        print(f"WARNING: Skipping legacy or obsolete data file: {legacy_file}")
     for label_dir in sorted(path for path in data_dir.iterdir() if path.is_dir()):
         files = sorted(label_dir.glob("*.csv"))
         if files:
@@ -83,37 +49,75 @@ def collect_label_files(data_dir: Path) -> dict[str, list[tuple[Path, str]]]:
     return label_files
 
 
-def load_sequence_file(csv_file: Path) -> list[np.ndarray] | None:
-    """Read a session file, skipping the whole file if any row is invalid."""
+def load_raw_window_file(csv_file: Path) -> list[np.ndarray] | None:
+    """Read raw session windows, skipping files with invalid or old-format rows."""
     windows: list[np.ndarray] = []
-    expected_count = SEQUENCE_LENGTH * FEATURES_PER_FRAME
     try:
         with csv_file.open("r", newline="", encoding="utf-8") as source:
             for row_number, row in enumerate(csv.reader(source), start=1):
-                if len(row) != expected_count:
+                if len(row) != RAW_WINDOW_SIZE:
                     print(
                         f"WARNING: Skipping {csv_file}: row {row_number} has "
-                        f"{len(row)} values; expected {expected_count}."
+                        f"{len(row)} values; expected {RAW_WINDOW_SIZE} raw values. "
+                        "Re-record this session."
                     )
                     return None
                 try:
-                    values = np.asarray([float(value) for value in row], dtype=np.float32)
+                    values = np.asarray(row, dtype=np.float64)
                 except ValueError:
                     print(f"WARNING: Skipping {csv_file}: row {row_number} is not numeric.")
                     return None
                 if not np.isfinite(values).all():
                     print(f"WARNING: Skipping {csv_file}: row {row_number} is not finite.")
                     return None
-                windows.append(values.reshape(SEQUENCE_LENGTH, FEATURES_PER_FRAME))
+                windows.append(values.reshape(SEQUENCE_LENGTH, RAW_FRAME_SIZE))
     except OSError as error:
         print(f"WARNING: Skipping unreadable sample file {csv_file}: {error}")
         return None
-
     return windows
 
 
-def print_label_counts(labels: list[str], class_ids: np.ndarray, group_ids: np.ndarray) -> None:
-    """Print the accepted window and session counts for each label."""
+def load_dataset(
+    data_dir: Path,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
+    """Load valid raw windows with integer labels and session group IDs."""
+    raw_windows: list[np.ndarray] = []
+    label_indices: list[int] = []
+    group_ids: list[str] = []
+    labels: list[str] = []
+
+    for label, files in sorted(collect_label_files(data_dir).items()):
+        label_windows: list[np.ndarray] = []
+        label_groups: list[str] = []
+        for csv_file, session_id in files:
+            windows = load_raw_window_file(csv_file)
+            if windows is None:
+                continue
+            label_windows.extend(windows)
+            label_groups.extend([f"{label}:{session_id}"] * len(windows))
+        if not label_windows:
+            continue
+        class_index = len(labels)
+        labels.append(label)
+        raw_windows.extend(label_windows)
+        label_indices.extend([class_index] * len(label_windows))
+        group_ids.extend(label_groups)
+
+    if len(labels) < 2:
+        raise ValueError("At least two labels with valid raw sequence windows are required.")
+
+    class_ids = np.asarray(label_indices, dtype=np.int64)
+    groups = np.asarray(group_ids, dtype=str)
+    raw_data = np.stack(raw_windows).astype(np.float32)
+    print_label_counts(labels, class_ids, groups)
+    warn_dataset_quality(labels, class_ids, groups)
+    return raw_data, class_ids, groups, labels
+
+
+def print_label_counts(
+    labels: list[str], class_ids: np.ndarray, group_ids: np.ndarray
+) -> None:
+    """Print accepted raw-window and session counts for each label."""
     print("Dataset counts:")
     for class_id, label in enumerate(labels):
         label_mask = class_ids == class_id
@@ -121,30 +125,55 @@ def print_label_counts(labels: list[str], class_ids: np.ndarray, group_ids: np.n
         print(f"  {label}: {int(np.sum(label_mask))} windows, {session_count} sessions")
 
 
+def warn_dataset_quality(
+    labels: list[str], class_ids: np.ndarray, group_ids: np.ndarray
+) -> None:
+    """Warn about sparse sessions, missing idle data, and severe class imbalance."""
+    counts = np.bincount(class_ids, minlength=len(labels))
+    for class_id, label in enumerate(labels):
+        sessions = np.unique(group_ids[class_ids == class_id])
+        if len(sessions) < 3:
+            print(
+                f"WARNING: Label '{label}' has {len(sessions)} sessions; "
+                "collect at least 3 sessions for session-isolated evaluation."
+            )
+    if not any(label.lower() == IDLE_LABEL.lower() for label in labels):
+        print(f"WARNING: No '{IDLE_LABEL}' label was found.")
+    if counts.max() > 2 * counts.min():
+        smallest = labels[int(np.argmin(counts))]
+        largest = labels[int(np.argmax(counts))]
+        print(
+            f"WARNING: Class imbalance: '{largest}' has over twice as many "
+            f"windows as '{smallest}'."
+        )
+
+
 def split_dataset(
-    features: np.ndarray, class_ids: np.ndarray, group_ids: np.ndarray
+    raw_windows: np.ndarray,
+    class_ids: np.ndarray,
+    group_ids: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Make session-isolated splits, falling back to stratification when needed."""
+    """Make session-disjoint train, validation, and test splits where possible."""
     session_counts = [
         len(np.unique(group_ids[class_ids == class_id]))
         for class_id in np.unique(class_ids)
     ]
     if any(count < 3 for count in session_counts):
         print(
-            "WARNING: At least one label has fewer than 3 sessions. "
-            "Falling back to stratified window-level splits; accuracy will be optimistic."
+            "WARNING: A label has fewer than 3 sessions. Falling back to "
+            "stratified window splits; accuracy may be optimistic."
         )
-        return stratified_split(features, class_ids)
-    return grouped_split(features, class_ids, group_ids)
+        return stratified_split(raw_windows, class_ids)
+    return grouped_split(raw_windows, class_ids, group_ids)
 
 
 def stratified_split(
-    features: np.ndarray, class_ids: np.ndarray
+    raw_windows: np.ndarray, class_ids: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Make the seeded stratified window-level fallback split."""
+    """Split windows 70/15/15 with a fixed, stratified random seed."""
     try:
         x_train, x_remaining, y_train, y_remaining = train_test_split(
-            features,
+            raw_windows,
             class_ids,
             test_size=0.30,
             random_state=RANDOM_SEED,
@@ -159,83 +188,111 @@ def stratified_split(
         )
     except ValueError as error:
         raise ValueError(
-            "Could not make stratified 70/15/15 splits. Collect more sequence windows "
-            "for each label, then try again."
+            "Could not make stratified 70/15/15 splits. Collect more windows "
+            "for each label and try again."
         ) from error
     return x_train, x_validation, x_test, y_train, y_validation, y_test
 
 
 def grouped_split(
-    features: np.ndarray, class_ids: np.ndarray, group_ids: np.ndarray
+    raw_windows: np.ndarray, class_ids: np.ndarray, group_ids: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Find deterministic 70/15/15 splits with no session shared between sets."""
-    class_values = np.unique(class_ids)
-    outer_splitter = GroupShuffleSplit(
-        n_splits=50,
-        test_size=0.30,
-        random_state=RANDOM_SEED,
-    )
-    for attempt, (train_indices, remainder_indices) in enumerate(
-        outer_splitter.split(features, class_ids, group_ids)
+    """Split sessions deterministically, ensuring no group crosses partitions."""
+    all_classes = np.unique(class_ids)
+    outer = GroupShuffleSplit(n_splits=100, test_size=0.30, random_state=RANDOM_SEED)
+    for attempt, (train_idx, remaining_idx) in enumerate(
+        outer.split(raw_windows, class_ids, group_ids)
     ):
-        inner_splitter = GroupShuffleSplit(
-            n_splits=20,
-            test_size=0.50,
-            random_state=RANDOM_SEED + attempt,
+        inner = GroupShuffleSplit(
+            n_splits=30, test_size=0.50, random_state=RANDOM_SEED + attempt
         )
-        for validation_local, test_local in inner_splitter.split(
-            features[remainder_indices],
-            class_ids[remainder_indices],
-            group_ids[remainder_indices],
+        for validation_local, test_local in inner.split(
+            raw_windows[remaining_idx],
+            class_ids[remaining_idx],
+            group_ids[remaining_idx],
         ):
-            validation_indices = remainder_indices[validation_local]
-            test_indices = remainder_indices[test_local]
-            if not all_classes_present(class_ids, (train_indices,), class_values):
+            validation_idx = remaining_idx[validation_local]
+            test_idx = remaining_idx[test_local]
+            if not np.array_equal(np.unique(class_ids[train_idx]), all_classes):
+                continue
+            partitions = (train_idx, validation_idx, test_idx)
+            if any(
+                set(group_ids[partitions[first]])
+                & set(group_ids[partitions[second]])
+                for first, second in ((0, 1), (0, 2), (1, 2))
+            ):
                 continue
             return (
-                features[train_indices],
-                features[validation_indices],
-                features[test_indices],
-                class_ids[train_indices],
-                class_ids[validation_indices],
-                class_ids[test_indices],
+                raw_windows[train_idx],
+                raw_windows[validation_idx],
+                raw_windows[test_idx],
+                class_ids[train_idx],
+                class_ids[validation_idx],
+                class_ids[test_idx],
             )
     raise ValueError(
-        "Could not create session-isolated splits with every label in training. "
-        "Collect more sessions per label or balance session sizes."
+        "Could not create session-isolated splits with every class in training. "
+        "Collect more sessions or balance the session sizes."
     )
 
 
-def all_classes_present(
-    class_ids: np.ndarray, partitions: tuple[np.ndarray, ...], classes: np.ndarray
-) -> bool:
-    """Check that each requested split contains every class."""
-    return all(np.array_equal(np.unique(class_ids[index]), classes) for index in partitions)
-
-
-def augment_training_data(
-    features: np.ndarray, seed: int = RANDOM_SEED
+def augment_raw_training_data(
+    raw_windows: np.ndarray, seed: int = RANDOM_SEED
 ) -> np.ndarray:
-    """Add Gaussian noise and small per-window scale variation to wrist offsets."""
+    """Augment training-only raw windows with coordinate noise, jitter, and shifts."""
     random = np.random.default_rng(seed)
-    augmented = features.copy()
+    augmented = raw_windows.copy().astype(np.float32)
     augmented += random.normal(
-        0.0, NOISE_STANDARD_DEVIATION, size=augmented.shape
+        0.0, AUGMENTATION_NOISE_STD, size=augmented.shape
     ).astype(np.float32)
+
+    hand = augmented[:, :, :63].reshape(-1, SEQUENCE_LENGTH, 21, 3)
+    pose = augmented[:, :, 63:].reshape(-1, SEQUENCE_LENGTH, 33, 2)
+    translations = random.uniform(
+        -AUGMENTATION_JITTER, AUGMENTATION_JITTER, size=(len(augmented), 1, 1, 2)
+    ).astype(np.float32)
+    hand[:, :, :, :2] += translations
+    pose += translations
     scales = random.uniform(
-        WRIST_SCALE_MIN, WRIST_SCALE_MAX, size=(len(augmented), 1, 1)
+        1.0 - AUGMENTATION_JITTER,
+        1.0 + AUGMENTATION_JITTER,
+        size=(len(augmented), 1, 1, 1),
     ).astype(np.float32)
-    augmented[:, :, WRIST_OFFSET_START:] *= scales
-    return np.concatenate((features, augmented), axis=0)
+    hand *= scales
+    pose *= scales
+
+    shifts = random.integers(
+        -MAX_AUGMENTATION_SHIFT,
+        MAX_AUGMENTATION_SHIFT + 1,
+        size=len(augmented),
+    )
+    time_indices = np.clip(
+        np.arange(SEQUENCE_LENGTH)[None, :] + shifts[:, None],
+        0,
+        SEQUENCE_LENGTH - 1,
+    )
+    augmented = augmented[np.arange(len(augmented))[:, None], time_indices]
+    return np.concatenate((raw_windows, augmented), axis=0)
 
 
-def build_model(num_classes: int) -> tf.keras.Model:
-    """Build a GRU classifier for a sequence of hand landmark features."""
+def transform_windows(raw_windows: np.ndarray) -> np.ndarray:
+    """Compute shared body-aware features once for each independent raw window."""
+    return np.stack([window_features(window) for window in raw_windows])
+
+
+def build_model(
+    num_classes: int, training_features: np.ndarray
+) -> tf.keras.Model:
+    """Build the normalized Conv1D-GRU sequence classifier."""
     import tensorflow as tf
 
+    normalization = tf.keras.layers.Normalization(axis=-1)
+    normalization.adapt(training_features)
     model = tf.keras.Sequential(
         [
-            tf.keras.layers.Input(shape=(SEQUENCE_LENGTH, FEATURES_PER_FRAME)),
+            tf.keras.layers.Input(shape=training_features.shape[1:]),
+            normalization,
+            tf.keras.layers.Conv1D(64, 3, padding="same", activation="relu"),
             tf.keras.layers.GRU(64),
             tf.keras.layers.Dropout(0.3),
             tf.keras.layers.Dense(64, activation="relu"),
@@ -250,8 +307,52 @@ def build_model(num_classes: int) -> tf.keras.Model:
     return model
 
 
-def save_artifacts(model: tf.keras.Model, labels: list[str]) -> None:
-    """Save the trained sequence model, labels, and input-dimension metadata."""
+def make_report(
+    labels: list[str], truth: np.ndarray, predictions: np.ndarray
+) -> dict[str, object]:
+    """Build per-class metrics, a confusion matrix, and plain-language confusions."""
+    class_values = np.arange(len(labels))
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        truth, predictions, labels=class_values, zero_division=0
+    )
+    matrix = confusion_matrix(truth, predictions, labels=class_values)
+    totals = matrix.sum(axis=1)
+    confusions: list[dict[str, object]] = []
+    for actual_index, actual_label in enumerate(labels):
+        for predicted_index, predicted_label in enumerate(labels):
+            count = int(matrix[actual_index, predicted_index])
+            if actual_index == predicted_index or count == 0:
+                continue
+            rate = count / max(int(totals[actual_index]), 1)
+            confusions.append({
+                "actual": actual_label,
+                "predicted": predicted_label,
+                "windows": count,
+                "rate": rate,
+                "description": (
+                    f"{actual_label} -> {predicted_label}: {rate:.0%} of test windows"
+                ),
+            })
+    confusions.sort(key=lambda item: (-float(item["rate"]), -int(item["windows"])))
+    return {
+        "per_class": {
+            label: {
+                "precision": float(precision[index]),
+                "recall": float(recall[index]),
+                "f1": float(f1[index]),
+            }
+            for index, label in enumerate(labels)
+        },
+        "confusion_matrix": matrix.tolist(),
+        "labels": labels,
+        "top_confusions": confusions[:5],
+    }
+
+
+def save_artifacts(
+    model: tf.keras.Model, labels: list[str], report: dict[str, object]
+) -> None:
+    """Save the trained model, labels, metadata, and evaluation report."""
     config.model_dir.mkdir(parents=True, exist_ok=True)
     model.save(config.model_dir / "sign_model.keras")
     (config.model_dir / "labels.json").write_text(
@@ -259,54 +360,71 @@ def save_artifacts(model: tf.keras.Model, labels: list[str]) -> None:
     )
     metadata = {
         "sequence_length": SEQUENCE_LENGTH,
+        "raw_frame_size": RAW_FRAME_SIZE,
         "features_per_frame": FEATURES_PER_FRAME,
+        "feature_version": FEATURE_VERSION,
     }
     (config.model_dir / "meta.json").write_text(
         json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
     )
+    (config.model_dir / "report.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def train() -> None:
-    """Train, evaluate, and save a sequence-based sign classifier."""
+    """Train and evaluate the body-aware sign model from raw sequences."""
     import tensorflow as tf
 
     tf.keras.utils.set_random_seed(RANDOM_SEED)
-    features, class_ids, group_ids, labels = load_dataset(config.data_dir)
-    x_train, x_validation, x_test, y_train, y_validation, y_test = split_dataset(
-        features, class_ids, group_ids
+    raw_windows, class_ids, group_ids, labels = load_dataset(config.data_dir)
+    x_train_raw, x_validation_raw, x_test_raw, y_train, y_validation, y_test = (
+        split_dataset(raw_windows, class_ids, group_ids)
     )
-    x_train = augment_training_data(x_train)
+    x_train_raw_augmented = augment_raw_training_data(x_train_raw)
+    x_train = transform_windows(x_train_raw_augmented)
+    x_validation = transform_windows(x_validation_raw)
+    x_test = transform_windows(x_test_raw)
 
-    model = build_model(len(labels))
+    model = build_model(len(labels), x_train)
+    class_weights = compute_class_weight(
+        class_weight="balanced", classes=np.unique(y_train), y=y_train
+    )
     model.fit(
         x_train,
         np.concatenate((y_train, y_train)),
         validation_data=(x_validation, y_validation),
+        class_weight={
+            int(class_id): float(weight)
+            for class_id, weight in zip(np.unique(y_train), class_weights)
+        },
         epochs=200,
         callbacks=[
             tf.keras.callbacks.EarlyStopping(
-                monitor="val_loss",
-                patience=10,
-                restore_best_weights=True,
+                monitor="val_loss", patience=10, restore_best_weights=True
             )
         ],
         verbose=1,
     )
 
     _, test_accuracy = model.evaluate(x_test, y_test, verbose=0)
-    predictions = np.argmax(model.predict(x_test, verbose=0), axis=1)
-    precision, recall, _, _ = precision_recall_fscore_support(
-        y_test, predictions, labels=np.arange(len(labels)), zero_division=0
-    )
-    matrix = confusion_matrix(y_test, predictions, labels=np.arange(len(labels)))
+    predicted_ids = np.argmax(model.predict(x_test, verbose=0), axis=1)
+    report = make_report(labels, y_test, predicted_ids)
+    report["test_accuracy"] = float(test_accuracy)
     print(f"Test accuracy: {test_accuracy:.4f}")
-    print("Per-class precision / recall:")
-    for label, label_precision, label_recall in zip(labels, precision, recall):
-        print(f"  {label}: precision={label_precision:.4f}, recall={label_recall:.4f}")
-    print(f"Confusion matrix (rows=true, columns=predicted; label order={labels}):")
-    print(matrix)
-    save_artifacts(model, labels)
-    print(f"Saved model and labels to {config.model_dir}")
+    print("Per-class precision / recall / F1:")
+    for label, metrics in report["per_class"].items():
+        print(
+            f"  {label}: precision={metrics['precision']:.4f}, "
+            f"recall={metrics['recall']:.4f}, F1={metrics['f1']:.4f}"
+        )
+    print(f"Confusion matrix (rows=true, columns=predicted; order={labels}):")
+    print(np.asarray(report["confusion_matrix"]))
+    print("Top confusions:")
+    for confusion in report["top_confusions"]:
+        print(f"  {confusion['description']}")
+    save_artifacts(model, labels, report)
+    print(f"Saved model, labels, metadata, and report to {config.model_dir}")
 
 
 if __name__ == "__main__":

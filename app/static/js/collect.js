@@ -2,7 +2,7 @@
 
 import { fetchJson } from "./api.js";
 import { FrameClock } from "./frame-clock.js";
-import { buildWindow, configureLandmarks } from "./landmarks.js";
+import { flattenWindow } from "./landmarks.js";
 import { startHandTracking } from "./hand-tracking.js";
 
 const COLLECTION_DURATION_SECONDS = 3;
@@ -78,7 +78,7 @@ function sliceRecording(recording) {
       dropped += 1;
       continue;
     }
-    windows.push(buildWindow(window));
+    windows.push(flattenWindow(window, config));
   }
   return { windows, dropped };
 }
@@ -94,7 +94,7 @@ function finishRecording() {
   saveButton.disabled = samples.length === 0;
   message.textContent =
     `RECORDING ${recordingCount}: ${windows.length} WINDOWS KEPT, ` +
-    `${dropped} DROPPED (HAND LOST). REPEAT THE SIGN 2-3 TIMES DURING EACH RECORDING.`;
+    `${dropped} DROPPED (HAND OR BODY LOST). REPEAT THE SIGN 2-3 TIMES DURING EACH RECORDING.`;
 }
 
 /**
@@ -217,20 +217,20 @@ async function refreshServerStatus() {
 async function initialiseCollector() {
   try {
     config = await fetchJson("/api/config");
-    configureLandmarks(config);
-    frameClock = new FrameClock(config.sample_rate_hz, handleClockTick);
+    progress.textContent = `0 / ${config.sample_rate_hz * COLLECTION_DURATION_SECONDS} TICKS`;
+    frameClock = new FrameClock(config, handleClockTick);
     await startHandTracking({
       video,
       overlay,
-      onHands: (hands) => frameClock.updateHands(hands),
       onStatus: (status) => {
         statusPill.textContent = status.toUpperCase();
       },
     });
     frameClock.start();
-    progress.textContent = `0 / ${config.sample_rate_hz * COLLECTION_DURATION_SECONDS} TICKS`;
   } catch (error) {
     console.error(error);
+    frameClock = null;
+    recordButton.disabled = true;
     statusPill.textContent = "CAMERA UNAVAILABLE";
     message.textContent = error.message;
   }

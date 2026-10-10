@@ -93,6 +93,8 @@ h1 {
   min-height: 380px;
   border-radius: 14px;
   background: #000;
+  transform: scaleX(-1);
+  transform-origin: center;
 }
 
 #overlay {

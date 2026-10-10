@@ -35,6 +35,12 @@ pip install -r requirements.txt
 python server.py
 ```
 
+For model training or offline landmark processing, install the ML extras separately:
+
+```bash
+pip install -r requirements-ml.txt
+```
+
 The app will be available at `http://127.0.0.1:5000`.
 
 ## Current status

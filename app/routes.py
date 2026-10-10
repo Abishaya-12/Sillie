@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, Response, jsonify, render_template
 
 blueprint = Blueprint("app", __name__)
 
@@ -14,6 +14,6 @@ def index() -> str:
 
 
 @blueprint.route("/api/health")
-def health() -> tuple[str, int]:
+def health() -> tuple[Response, int]:
     """Return a lightweight health-check payload."""
     return jsonify({"status": "ok", "service": "sillie"}), 200

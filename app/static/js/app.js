@@ -8,39 +8,20 @@ const statusPill = document.querySelector(".status-pill");
 
 const canvasContext = overlay.getContext("2d");
 
-function drawCameraFrameBorder() {
-  canvasContext.clearRect(0, 0, overlay.width, overlay.height);
-  canvasContext.strokeStyle = "#8b5cf6";
-  canvasContext.lineWidth = 2;
-  canvasContext.strokeRect(18, 18, overlay.width - 36, overlay.height - 36);
-}
-
 async function initialiseCamera() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    transcript.textContent = "This browser does not support webcam access.";
+  if (!window.Hands || !window.Camera || !window.drawConnectors || !window.drawLandmarks) {
+    transcript.textContent = "MediaPipe failed to load. Please refresh the page.";
     return;
   }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user" },
-      audio: false,
-    });
-
-    video.srcObject = stream;
-    video.onloadedmetadata = () => {
+    video.addEventListener("loadedmetadata", () => {
       overlay.width = video.videoWidth || 640;
       overlay.height = video.videoHeight || 480;
-      drawCameraFrameBorder();
-    };
-
-    if (!window.Hands || !window.Camera || !window.drawConnectors || !window.drawLandmarks) {
-      transcript.textContent = "MediaPipe failed to load. Please refresh the page.";
-      return;
-    }
+    });
 
     const handDetector = new window.Hands({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`,
     });
 
     handDetector.setOptions({
@@ -60,7 +41,6 @@ async function initialiseCamera() {
 
       if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         statusPill.textContent = "Tracking hands";
-        transcript.textContent = `${results.multiHandLandmarks.length} hand(s) detected`;
 
         results.multiHandLandmarks.forEach((landmarks) => {
           window.drawConnectors(canvasContext, landmarks, window.HAND_CONNECTIONS, {
@@ -74,7 +54,7 @@ async function initialiseCamera() {
         });
       } else {
         statusPill.textContent = "Looking for hands";
-        transcript.textContent = "No hand detected. Position your hand in front of the camera.";
+        transcript.textContent = "Waiting for input...";
       }
 
       canvasContext.restore();

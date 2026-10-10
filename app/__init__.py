@@ -14,6 +14,7 @@ def create_app() -> Flask:
     app.config["DEBUG"] = config.debug
     app.config["HOST"] = config.host
     app.config["PORT"] = config.port
+    app.config["DATA_DIR"] = config.data_dir
 
     from .routes import blueprint
 

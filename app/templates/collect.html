@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Collect samples | Sillie</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Sillie dataset tools</p>
+          <h1>Collect sign samples</h1>
+          <a href="{{ url_for('app.index') }}">Back to translator</a>
+        </div>
+      </header>
+
+      <section class="lanes">
+        <div class="panel camera-panel">
+          <div class="panel-header">
+            <h2>Live camera</h2>
+            <span class="status-pill">Looking for hands</span>
+          </div>
+          <video id="camera" autoplay playsinline muted></video>
+          <canvas id="overlay"></canvas>
+        </div>
+
+        <aside class="panel sidebar-panel">
+          <div class="panel-header">
+            <h2>Record dataset</h2>
+          </div>
+          <label class="label" for="sign-label">Sign label</label>
+          <input id="sign-label" type="text" autocomplete="off" placeholder="e.g. hello" />
+          <div class="speech-box">
+            <p class="label">Progress</p>
+            <p id="progress" aria-live="polite">0 / 100</p>
+            <button id="record-button" type="button">Record</button>
+            <button id="save-button" type="button" disabled>Save samples</button>
+            <p id="collection-message" role="status" aria-live="polite"></p>
+          </div>
+          <div class="speech-box">
+            <p class="label">Saved samples</p>
+            <ul id="summary-list" aria-live="polite">Loading...</ul>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" defer></script>
+    <script type="module" src="{{ url_for('static', filename='js/collect.js') }}"></script>
+  </body>
+</html>

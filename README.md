@@ -43,6 +43,10 @@ pip install -r requirements-ml.txt
 
 The app will be available at `http://127.0.0.1:5000`.
 
+## Collecting data
+
+Open `http://127.0.0.1:5000/collect`, enter a label using letters, numbers, dashes, or underscores, then select **Record**. The browser records 100 frames where exactly one hand is detected; select **Save samples** to append them to `data/<label>.csv`. The collection page shows stored sample counts by label. Set `SILLIE_DATA_DIR` to use a different storage directory.
+
 ## Current status
 
-This repository is in the initial scaffold phase. The next milestone is to build the webcam page, add MediaPipe landmark detection, and collect a small sign dataset for training.
+The webcam hand-tracking page and browser-based sample collection are in place. The next milestone is training and testing a sign classifier on the collected landmarks.

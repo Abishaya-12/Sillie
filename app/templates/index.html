@@ -12,6 +12,7 @@
         <div>
           <p class="eyebrow">Real-time Sign Language Translator</p>
           <h1>Sillie</h1>
+          <a href="{{ url_for('app.collect') }}">Collect sign samples</a>
         </div>
       </header>
 
@@ -44,6 +45,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" defer></script>
-    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+    <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
   </body>
 </html>

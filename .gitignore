@@ -11,6 +11,7 @@ venv/
 # Flask
 instance/
 .pytest_cache/
+data/
 
 # OS/editor
 .DS_Store

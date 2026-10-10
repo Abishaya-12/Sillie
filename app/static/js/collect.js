@@ -42,7 +42,7 @@ function recordHandFrame(hands) {
   if (samples.length === REQUIRED_SAMPLES) {
     isRecording = false;
     saveButton.disabled = false;
-    message.textContent = "Recording complete. Save the samples when ready.";
+    message.textContent = "RECORDING COMPLETE. SAVE THE SAMPLES WHEN READY.";
   }
 }
 
@@ -54,11 +54,11 @@ async function startCamera() {
       overlay,
       onHands: recordHandFrame,
       onStatus: (status) => {
-        statusPill.textContent = status;
+        statusPill.textContent = status.toUpperCase();
       },
     });
   } catch (error) {
-    statusPill.textContent = "Camera unavailable";
+    statusPill.textContent = "CAMERA UNAVAILABLE";
     message.textContent = error.message;
     console.error(error);
   }
@@ -70,12 +70,12 @@ async function refreshSummary() {
   summaryList.replaceChildren();
   const labels = Object.entries(counts);
   if (labels.length === 0) {
-    summaryList.textContent = "No samples saved yet.";
+    summaryList.textContent = "NO SAMPLES SAVED YET.";
     return;
   }
   labels.forEach(([label, counts]) => {
     const item = document.createElement("li");
-    item.textContent = `${label}: ${counts.samples} samples, ${counts.sessions} sessions`;
+    item.textContent = `${label}: ${counts.samples} SAMPLES / ${counts.sessions} SESS`;
     summaryList.append(item);
   });
 }
@@ -84,11 +84,11 @@ async function refreshSummary() {
 function beginRecording() {
   const label = labelInput.value.trim();
   if (!/^[A-Za-z0-9_-]+$/.test(label)) {
-    message.textContent = "Enter a label using only letters, numbers, dashes, or underscores.";
+    message.textContent = "ENTER A LABEL USING ONLY LETTERS, NUMBERS, DASHES, OR UNDERSCORES.";
     return;
   }
   if (!video.srcObject) {
-    message.textContent = "Wait for the camera to start before recording.";
+    message.textContent = "WAIT FOR THE CAMERA TO START BEFORE RECORDING.";
     return;
   }
 
@@ -101,13 +101,13 @@ function beginRecording() {
   recordButton.disabled = true;
   saveButton.disabled = true;
   updateProgress();
-  message.textContent = "Recording: hold one hand in view.";
+  message.textContent = "RECORDING: HOLD ONE HAND IN VIEW.";
 }
 
 /** Submit the recorded sample batch and refresh the saved-count summary. */
 async function saveSamples() {
   saveButton.disabled = true;
-  message.textContent = "Saving samples...";
+  message.textContent = "SAVING SAMPLES...";
   try {
     const safeName = collectorNameForBatch.replace(/[^A-Za-z0-9_-]/g, "") || "anonymous";
     const session = `${safeName}-${Date.now()}`.replace(/[^A-Za-z0-9_-]/g, "");
@@ -116,7 +116,7 @@ async function saveSamples() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ label: sampleLabel, samples, session }),
     });
-    message.textContent = `Saved ${samples.length} samples for "${result.label}". Total: ${result.samples} samples across ${result.sessions} sessions.`;
+    message.textContent = `SAVED ${samples.length} SAMPLES FOR "${result.label}". TOTAL: ${result.samples} SAMPLES ACROSS ${result.sessions} SESSIONS.`;
     samples = [];
     sampleLabel = "";
     collectorNameForBatch = "";
@@ -128,7 +128,7 @@ async function saveSamples() {
       await refreshSummary();
     } catch (summaryError) {
       console.error(summaryError);
-      message.textContent += ` Sample summary could not be refreshed: ${summaryError.message}`;
+      message.textContent += ` SAMPLE SUMMARY COULD NOT BE REFRESHED: ${summaryError.message}`;
     }
   } catch (error) {
     console.error(error);
@@ -141,12 +141,12 @@ async function saveSamples() {
 async function refreshServerStatus() {
   try {
     await fetchJson("/api/health");
-    serverStatus.textContent = "Server online";
+    serverStatus.textContent = "SERVER ONLINE";
     serverStatus.classList.add("online");
     serverStatus.classList.remove("offline");
   } catch (error) {
     console.error(error);
-    serverStatus.textContent = "Server offline";
+    serverStatus.textContent = "SERVER OFFLINE";
     serverStatus.classList.add("offline");
     serverStatus.classList.remove("online");
   }

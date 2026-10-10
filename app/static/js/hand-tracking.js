@@ -1,6 +1,9 @@
 "use strict";
 
 const HANDS_VERSION = "0.4.1675469240";
+const HAND_CONNECTION_COLOR = "#73eff7";
+const LANDMARK_COLOR = "#ffcd75";
+const LANDMARK_PIXEL_SIZE = 6;
 
 /**
  * Start the shared MediaPipe hand detector and camera.
@@ -13,7 +16,7 @@ const HANDS_VERSION = "0.4.1675469240";
  * @returns {Promise<void>} Resolves after the camera starts.
  */
 export async function startHandTracking({ video, overlay, onHands, onStatus }) {
-  if (!window.Hands || !window.Camera || !window.drawConnectors || !window.drawLandmarks) {
+  if (!window.Hands || !window.Camera || !window.drawConnectors) {
     throw new Error("MediaPipe failed to load. Please refresh the page.");
   }
 
@@ -47,13 +50,17 @@ export async function startHandTracking({ video, overlay, onHands, onStatus }) {
       context.drawImage(results.image, 0, 0, overlay.width, overlay.height);
     }
     hands.forEach((landmarks) => {
+      context.lineCap = "square";
       window.drawConnectors(context, landmarks, window.HAND_CONNECTIONS, {
-        color: "#22c55e",
+        color: HAND_CONNECTION_COLOR,
         lineWidth: 4,
+        lineCap: "square",
       });
-      window.drawLandmarks(context, landmarks, {
-        color: "#a78bfa",
-        lineWidth: 2,
+      context.fillStyle = LANDMARK_COLOR;
+      landmarks.forEach((landmark) => {
+        const left = Math.round(landmark.x * overlay.width - LANDMARK_PIXEL_SIZE / 2);
+        const top = Math.round(landmark.y * overlay.height - LANDMARK_PIXEL_SIZE / 2);
+        context.fillRect(left, top, LANDMARK_PIXEL_SIZE, LANDMARK_PIXEL_SIZE);
       });
     });
     context.restore();

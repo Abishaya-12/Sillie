@@ -57,6 +57,7 @@ function renderPrediction(label, confidence) {
   if (!label) {
     currentGuess.textContent = "Waiting for a hand...";
     confidenceFill.style.width = "0%";
+    confidenceFill.dataset.level = "low";
     confidenceTrack.setAttribute("aria-valuenow", "0");
     return;
   }
@@ -64,6 +65,7 @@ function renderPrediction(label, confidence) {
   const percentage = Math.round(confidence * 100);
   currentGuess.textContent = `${label} ${percentage}%`;
   confidenceFill.style.width = `${percentage}%`;
+  confidenceFill.dataset.level = percentage < 50 ? "low" : percentage < 85 ? "mid" : "high";
   confidenceTrack.setAttribute("aria-valuenow", String(percentage));
 }
 
@@ -75,11 +77,11 @@ async function refreshModelStatus() {
     const status = await fetchJson("/api/model/status");
     modelAvailable = Array.isArray(status.labels) && status.labels.length > 0;
     predictionStatus.textContent = modelAvailable
-      ? "Model ready"
-      : "Train a model first";
+      ? "MODEL READY"
+      : "TRAIN A MODEL FIRST";
   } catch (error) {
     console.error(error);
-    predictionStatus.textContent = "Cannot check model status";
+    predictionStatus.textContent = "CANNOT CHECK MODEL STATUS";
   }
 }
 
@@ -142,7 +144,7 @@ async function requestPrediction(landmarks) {
     stabilizer.reset();
     if (error.message.includes(NO_MODEL_ERROR)) {
       modelAvailable = false;
-      predictionStatus.textContent = "Train a model first";
+      predictionStatus.textContent = "TRAIN A MODEL FIRST";
       renderPrediction(null, 0);
     } else {
       console.error(error);
@@ -181,12 +183,12 @@ async function initialiseCamera() {
       overlay,
       onHands: handleHands,
       onStatus: (status) => {
-        statusPill.textContent = status;
+        statusPill.textContent = status.toUpperCase();
       },
     });
   } catch (error) {
     console.error(error);
-    statusPill.textContent = "Camera unavailable";
+    statusPill.textContent = "CAMERA UNAVAILABLE";
   }
 }
 

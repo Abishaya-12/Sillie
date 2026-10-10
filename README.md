@@ -51,6 +51,8 @@ Running server-side predictions also requires TensorFlow and the other ML packag
 
 The app will be available at `http://127.0.0.1:5000`.
 
+For an offline demo, download the Press Start 2P and VT323 font files into `app/static/fonts/` and replace the Google Fonts link in each page with local `@font-face` declarations in `app/static/css/style.css`.
+
 ## Collecting data
 
 Open `http://127.0.0.1:5000/collect`, optionally enter your name, enter a label using letters, numbers, dashes, or underscores, then select **Record**. The browser records 100 frames where exactly one hand is detected. **Save samples** assigns that batch a unique session and stores it in `data/<label>/<session>.csv`; the collection page shows total sample and session counts. Existing flat `data/<label>.csv` files remain included and count as one `legacy` session. Set `SILLIE_DATA_DIR` to use a different storage directory. For meaningful session-isolated evaluation, collect at least three sessions for every label.

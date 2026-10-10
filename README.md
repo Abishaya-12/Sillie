@@ -41,6 +41,12 @@ For model training or offline landmark processing, install the ML extras separat
 pip install -r requirements-ml.txt
 ```
 
+The ML requirements include scikit-learn for stratified dataset splits and confusion-matrix evaluation. To train the sign classifier after collecting samples, run:
+
+```bash
+python -m ml.train
+```
+
 The app will be available at `http://127.0.0.1:5000`.
 
 ## Collecting data

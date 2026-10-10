@@ -2,3 +2,4 @@
 opencv-python-headless>=4.10.0
 mediapipe>=0.10.0
 tensorflow>=2.16.0
+scikit-learn>=1.4.0

@@ -41,17 +41,19 @@ For model training or offline landmark processing, install the ML extras separat
 pip install -r requirements-ml.txt
 ```
 
-The ML requirements include scikit-learn for stratified dataset splits and confusion-matrix evaluation. To train the sign classifier after collecting samples, run:
+The ML requirements include scikit-learn for session-aware splits and confusion-matrix evaluation. Training keeps sessions separate between train, validation, and test where each label has at least three sessions. Otherwise, it warns and falls back to a stratified sample-level split, whose accuracy may be optimistic. To train the sign classifier after collecting samples, run:
 
 ```bash
 python -m ml.train
 ```
 
+Running server-side predictions also requires TensorFlow and the other ML packages; install them with `pip install -r requirements-ml.txt` before training or requesting predictions.
+
 The app will be available at `http://127.0.0.1:5000`.
 
 ## Collecting data
 
-Open `http://127.0.0.1:5000/collect`, enter a label using letters, numbers, dashes, or underscores, then select **Record**. The browser records 100 frames where exactly one hand is detected; select **Save samples** to append them to `data/<label>.csv`. The collection page shows stored sample counts by label. Set `SILLIE_DATA_DIR` to use a different storage directory.
+Open `http://127.0.0.1:5000/collect`, optionally enter your name, enter a label using letters, numbers, dashes, or underscores, then select **Record**. The browser records 100 frames where exactly one hand is detected. **Save samples** assigns that batch a unique session and stores it in `data/<label>/<session>.csv`; the collection page shows total sample and session counts. Existing flat `data/<label>.csv` files remain included and count as one `legacy` session. Set `SILLIE_DATA_DIR` to use a different storage directory. For meaningful session-isolated evaluation, collect at least three sessions for every label.
 
 ## Current status
 

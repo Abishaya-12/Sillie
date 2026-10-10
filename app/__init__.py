@@ -15,8 +15,11 @@ def create_app() -> Flask:
     app.config["HOST"] = config.host
     app.config["PORT"] = config.port
     app.config["DATA_DIR"] = config.data_dir
+    app.config["MODEL_DIR"] = config.model_dir
 
     from .routes import blueprint
+    from ml.inference import SignClassifier
 
     app.register_blueprint(blueprint)
+    app.extensions["sign_classifier"] = SignClassifier(app.config["MODEL_DIR"])
     return app

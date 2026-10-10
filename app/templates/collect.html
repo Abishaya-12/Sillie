@@ -13,6 +13,10 @@
           <p class="eyebrow">Sillie dataset tools</p>
           <h1>Collect sign samples</h1>
           <a href="{{ url_for('app.index') }}">Back to translator</a>
+          <p id="server-status" class="server-status offline" role="status" aria-live="polite">
+            <span class="server-status-dot" aria-hidden="true"></span>
+            Server offline
+          </p>
         </div>
       </header>
 
@@ -30,6 +34,8 @@
           <div class="panel-header">
             <h2>Record dataset</h2>
           </div>
+          <label class="label" for="collector-name">Your name (optional)</label>
+          <input id="collector-name" type="text" autocomplete="name" placeholder="Anonymous" />
           <label class="label" for="sign-label">Sign label</label>
           <input id="sign-label" type="text" autocomplete="off" placeholder="e.g. hello" />
           <div class="speech-box">

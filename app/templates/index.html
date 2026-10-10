@@ -24,6 +24,21 @@
           </div>
           <video id="camera" autoplay playsinline muted></video>
           <canvas id="overlay"></canvas>
+          <div class="prediction-panel" aria-live="polite">
+            <p id="prediction-status">Checking for a trained model...</p>
+            <p id="current-guess">Waiting for a hand...</p>
+            <div
+              id="confidence-track"
+              class="confidence-track"
+              role="progressbar"
+              aria-label="Prediction confidence"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+            >
+              <div id="confidence-fill" class="confidence-fill"></div>
+            </div>
+          </div>
         </div>
 
         <aside class="panel sidebar-panel">
@@ -33,9 +48,16 @@
           <div class="transcript-box">
             <p class="label">Detected signs</p>
             <div id="transcript" class="transcript-text">Waiting for input...</div>
+            <div class="transcript-actions">
+              <button id="clear-button" type="button">Clear</button>
+              <button id="undo-button" type="button" disabled>Undo last word</button>
+            </div>
           </div>
           <div class="speech-box">
-            <p class="label">Speech output</p>
+            <div class="toggle-row">
+              <label for="auto-speak">Auto-speak</label>
+              <input id="auto-speak" type="checkbox" checked />
+            </div>
             <button id="speak-button" type="button">Play translated speech</button>
           </div>
         </aside>

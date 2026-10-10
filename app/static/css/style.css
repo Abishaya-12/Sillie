@@ -81,6 +81,26 @@ h1 {
   font-size: 0.72rem;
 }
 
+.server-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.server-status-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: #ef4444;
+}
+
+.server-status.online .server-status-dot {
+  background: #22c55e;
+}
+
 .camera-panel {
   position: relative;
   overflow: hidden;
@@ -103,6 +123,42 @@ h1 {
   width: calc(100% - 2rem);
   height: calc(100% - 5.1rem);
   pointer-events: none;
+}
+
+.prediction-panel {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.prediction-panel p {
+  margin-bottom: 0.5rem;
+}
+
+#prediction-status {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+#current-guess {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.confidence-track {
+  height: 0.55rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.confidence-fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8b5cf6, #22c55e);
+  transition: width 120ms ease-out;
 }
 
 .transcript-box,
@@ -148,6 +204,29 @@ button:disabled {
   opacity: 0.55;
 }
 
+.transcript-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.transcript-actions button {
+  padding: 0.65rem 0.5rem;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+#auto-speak {
+  width: auto;
+  accent-color: var(--accent);
+}
+
 input {
   width: 100%;
   border: 1px solid var(--panel-border);
@@ -156,6 +235,11 @@ input {
   color: var(--text);
   padding: 0.8rem 1rem;
   font: inherit;
+}
+
+input + .label {
+  display: block;
+  margin-top: 1rem;
 }
 
 #save-button {

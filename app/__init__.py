@@ -1,13 +1,13 @@
 """Flask application factory for Sillie."""
 
 from __future__ import annotations
-
+from typing import TYPE_CHECKING
 import os
 from pathlib import Path
 from typing import Any
 
 from flask import Flask
-
+from werkzeug.middleware.proxy_fix import ProxyFix
 from config import (
     FEATURES_PER_FRAME,
     FEATURE_VERSION,

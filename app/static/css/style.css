@@ -168,7 +168,8 @@ body {
   width: calc(var(--px) * 16);
   height: calc(var(--px) * 16);
   flex: 0 0 auto;
-  shape-rendering: crispEdges;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 
 h1,

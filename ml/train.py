@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import argparse
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -121,8 +122,17 @@ def print_label_counts(
     print("Dataset counts:")
     for class_id, label in enumerate(labels):
         label_mask = class_ids == class_id
-        session_count = len(np.unique(group_ids[label_mask]))
-        print(f"  {label}: {int(np.sum(label_mask))} windows, {session_count} sessions")
+        sessions = np.unique(group_ids[label_mask])
+        dataset_sessions = [
+            session
+            for session in sessions
+            if session.rsplit(":", 1)[-1].startswith("ds-")
+        ]
+        own_sessions = len(sessions) - len(dataset_sessions)
+        print(
+            f"  {label}: {int(np.sum(label_mask))} windows, "
+            f"{own_sessions} own sessions, {len(dataset_sessions)} dataset sessions"
+        )
 
 
 def warn_dataset_quality(
@@ -132,10 +142,15 @@ def warn_dataset_quality(
     counts = np.bincount(class_ids, minlength=len(labels))
     for class_id, label in enumerate(labels):
         sessions = np.unique(group_ids[class_ids == class_id])
-        if len(sessions) < 3:
+        own_sessions = [
+            session
+            for session in sessions
+            if not session.rsplit(":", 1)[-1].startswith("ds-")
+        ]
+        if len(own_sessions) < 2:
             print(
-                f"WARNING: Label '{label}' has {len(sessions)} sessions; "
-                "collect at least 3 sessions for session-isolated evaluation."
+                f"WARNING: Label '{label}' has {len(own_sessions)} own sessions; "
+                "at least 2 are required for validation and test."
             )
     if not any(label.lower() == IDLE_LABEL.lower() for label in labels):
         print(f"WARNING: No '{IDLE_LABEL}' label was found.")
@@ -152,19 +167,131 @@ def split_dataset(
     raw_windows: np.ndarray,
     class_ids: np.ndarray,
     group_ids: np.ndarray,
+    allow_ds_only: bool = False,
+    labels: list[str] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Make session-disjoint train, validation, and test splits where possible."""
-    session_counts = [
-        len(np.unique(group_ids[class_ids == class_id]))
-        for class_id in np.unique(class_ids)
-    ]
-    if any(count < 3 for count in session_counts):
-        print(
-            "WARNING: A label has fewer than 3 sessions. Falling back to "
-            "stratified window splits; accuracy may be optimistic."
+    """Keep ds- sessions in training and split own sessions across all sets."""
+    rng = np.random.default_rng(RANDOM_SEED)
+    train_indices: list[int] = []
+    validation_indices: list[int] = []
+    test_indices: list[int] = []
+
+    for class_id in np.unique(class_ids):
+        class_mask = class_ids == class_id
+        class_sessions = np.unique(group_ids[class_mask])
+        dataset_sessions = [
+            session
+            for session in class_sessions
+            if session.rsplit(":", 1)[-1].startswith("ds-")
+        ]
+        own_sessions = [
+            session
+            for session in class_sessions
+            if not session.rsplit(":", 1)[-1].startswith("ds-")
+        ]
+        label = labels[int(class_id)] if labels is not None else str(int(class_id))
+        if len(own_sessions) < 2:
+            if not allow_ds_only:
+                raise ValueError(
+                    f"Label class {label} has {len(own_sessions)} own sessions; "
+                    "at least 2 are required. Collect more own sessions or use "
+                    "--allow-ds-only to continue with a loud warning."
+                )
+            print(
+                f"WARNING: --allow-ds-only enabled for label class {label}; "
+                f"only {len(own_sessions)} own sessions are available. "
+                "Dataset sessions will remain training-only."
+            )
+
+        shuffled_own = list(own_sessions)
+        rng.shuffle(shuffled_own)
+        if len(shuffled_own) >= 3:
+            own_train_count = len(shuffled_own) - 2
+            own_train = shuffled_own[:own_train_count]
+            own_validation = shuffled_own[own_train_count:own_train_count + 1]
+            own_test = shuffled_own[own_train_count + 1:]
+        elif len(shuffled_own) == 2:
+            own_train = []
+            own_validation = shuffled_own[:1]
+            own_test = shuffled_own[1:]
+        elif len(shuffled_own) == 1:
+            own_train = []
+            own_validation = shuffled_own
+            own_test = []
+        else:
+            own_train = []
+            own_validation = []
+            own_test = []
+
+        selected = set(dataset_sessions + own_train)
+        validation_selected = set(own_validation)
+        test_selected = set(own_test)
+        train_indices.extend(
+            int(index)
+            for index in np.flatnonzero(class_mask)
+            if group_ids[index] in selected
         )
-        return stratified_split(raw_windows, class_ids)
-    return grouped_split(raw_windows, class_ids, group_ids)
+        validation_indices.extend(
+            int(index)
+            for index in np.flatnonzero(class_mask)
+            if group_ids[index] in validation_selected
+        )
+        test_indices.extend(
+            int(index)
+            for index in np.flatnonzero(class_mask)
+            if group_ids[index] in test_selected
+        )
+
+    if not train_indices:
+        raise ValueError(
+            "Training split is empty. Import dataset videos or collect at least "
+            "3 own sessions per label."
+        )
+    if not np.array_equal(
+        np.unique(class_ids[train_indices]), np.unique(class_ids)
+    ):
+        raise ValueError(
+            "Every label needs training data. Import dataset videos or collect "
+            "at least 3 own sessions for each label."
+        )
+
+    indices = (train_indices, validation_indices, test_indices)
+    print_split_counts(class_ids, group_ids, indices, labels)
+    return (
+        raw_windows[train_indices],
+        raw_windows[validation_indices],
+        raw_windows[test_indices],
+        class_ids[train_indices],
+        class_ids[validation_indices],
+        class_ids[test_indices],
+    )
+
+
+def print_split_counts(
+    class_ids: np.ndarray,
+    group_ids: np.ndarray,
+    partitions: tuple[list[int], list[int], list[int]],
+    labels: list[str] | None = None,
+) -> None:
+    """Print window counts by label, split, and own/dataset source."""
+    for split_name, indices in zip(("train", "validation", "test"), partitions):
+        index_array = np.asarray(indices, dtype=int)
+        sources = np.asarray([
+            "dataset"
+            if group_ids[index].rsplit(":", 1)[-1].startswith("ds-")
+            else "own"
+            for index in index_array
+        ])
+        print(f"{split_name.title()} windows by source:")
+        for class_id in np.unique(class_ids):
+            class_mask = class_ids[index_array] == class_id
+            own_count = int(np.sum(class_mask & (sources == "own")))
+            dataset_count = int(np.sum(class_mask & (sources == "dataset")))
+            print(
+                f"  {labels[int(class_id)] if labels else f'class {int(class_id)}'}: "
+                f"own={own_count}, "
+                f"dataset={dataset_count}, total={own_count + dataset_count}"
+            )
 
 
 def stratified_split(
@@ -372,19 +499,19 @@ def save_artifacts(
     )
 
 
-def train() -> None:
+def train(allow_ds_only: bool = False) -> None:
     """Train and evaluate the body-aware sign model from raw sequences."""
     import tensorflow as tf
 
     tf.keras.utils.set_random_seed(RANDOM_SEED)
     raw_windows, class_ids, group_ids, labels = load_dataset(config.data_dir)
     x_train_raw, x_validation_raw, x_test_raw, y_train, y_validation, y_test = (
-        split_dataset(raw_windows, class_ids, group_ids)
+        split_dataset(raw_windows, class_ids, group_ids, allow_ds_only, labels)
     )
     x_train_raw_augmented = augment_raw_training_data(x_train_raw)
     x_train = transform_windows(x_train_raw_augmented)
-    x_validation = transform_windows(x_validation_raw)
-    x_test = transform_windows(x_test_raw)
+    x_validation = transform_windows(x_validation_raw) if len(x_validation_raw) else None
+    x_test = transform_windows(x_test_raw) if len(x_test_raw) else None
 
     model = build_model(len(labels), x_train)
     class_weights = compute_class_weight(
@@ -393,7 +520,9 @@ def train() -> None:
     model.fit(
         x_train,
         np.concatenate((y_train, y_train)),
-        validation_data=(x_validation, y_validation),
+        validation_data=(
+            (x_validation, y_validation) if x_validation is not None else None
+        ),
         class_weight={
             int(class_id): float(weight)
             for class_id, weight in zip(np.unique(y_train), class_weights)
@@ -401,17 +530,29 @@ def train() -> None:
         epochs=200,
         callbacks=[
             tf.keras.callbacks.EarlyStopping(
-                monitor="val_loss", patience=10, restore_best_weights=True
+                monitor="val_loss" if x_validation is not None else "loss",
+                patience=10,
+                restore_best_weights=True,
             )
         ],
         verbose=1,
     )
 
-    _, test_accuracy = model.evaluate(x_test, y_test, verbose=0)
-    predicted_ids = np.argmax(model.predict(x_test, verbose=0), axis=1)
-    report = make_report(labels, y_test, predicted_ids)
-    report["test_accuracy"] = float(test_accuracy)
-    print(f"Test accuracy: {test_accuracy:.4f}")
+    if x_test is not None:
+        _, test_accuracy = model.evaluate(x_test, y_test, verbose=0)
+        predicted_ids = np.argmax(model.predict(x_test, verbose=0), axis=1)
+        report = make_report(labels, y_test, predicted_ids)
+        report["test_accuracy"] = float(test_accuracy)
+        print(f"Test accuracy: {test_accuracy:.4f}")
+    else:
+        report = {
+            "per_class": {},
+            "confusion_matrix": [],
+            "labels": labels,
+            "top_confusions": [],
+            "test_accuracy": None,
+        }
+        print("Test accuracy: unavailable (no own test sessions).")
     print("Per-class precision / recall / F1:")
     for label, metrics in report["per_class"].items():
         print(
@@ -428,4 +569,10 @@ def train() -> None:
 
 
 if __name__ == "__main__":
-    train()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--allow-ds-only",
+        action="store_true",
+        help="Allow labels with fewer than 2 own sessions; evaluation may be incomplete.",
+    )
+    train(parser.parse_args().allow_ds_only)

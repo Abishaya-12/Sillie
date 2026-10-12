@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import time
+import os
 from urllib.parse import urlsplit
 
 from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
@@ -110,6 +111,14 @@ def login() -> Response | str:
     ).scalar_one_or_none()
     if user is not None and check_password_hash(user.password_hash, password):
         LOGIN_FAILURES.pop(key, None)
+        configured_admins = {
+            name.strip().lower()
+            for name in os.getenv("SILLIE_ADMIN_USERNAMES", "").split(",")
+            if name.strip()
+        }
+        if username in configured_admins and not user.is_admin:
+            user.is_admin = True
+            db.session.commit()
         login_user(user)
         return redirect(safe_next_url(request.form.get("next", "")))
 

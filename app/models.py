@@ -26,6 +26,8 @@ class User(UserMixin, db.Model):
     display_name = db.Column(db.String(50), nullable=False)
     accessibility_profile = db.Column(db.String(10), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    is_admin = db.Column(db.Boolean, nullable=False, default=False)
+    last_seen = db.Column(db.DateTime(timezone=True), nullable=True)
 
     @validates("username")
     def normalize_username(self, key: str, username: str) -> str:

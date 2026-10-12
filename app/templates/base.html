@@ -30,6 +30,9 @@
           {% if current_user.is_authenticated %}
             <span class="nav-greeting">HI, {{ current_user.display_name }}</span>
             <a class="key-link" href="{{ url_for('app.lobby') }}">LOBBY</a>
+            {% if current_user.is_admin %}
+              <a class="key-link" href="{{ url_for('admin.dashboard') }}">ADMIN</a>
+            {% endif %}
             <form action="{{ url_for('auth.logout') }}" method="post">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
               <button class="key-danger" type="submit">LOGOUT</button>
@@ -53,5 +56,6 @@
 
       {% block content %}{% endblock %}
     </main>
+    {% block scripts %}{% endblock %}
   </body>
 </html>

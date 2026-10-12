@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import math
 import re
 import secrets
 from pathlib import Path
@@ -31,6 +30,7 @@ from config import (
     SEQUENCE_LENGTH,
 )
 from .extensions import csrf
+from .storage import is_finite_number, normalize_sample_rows, write_sample_rows
 from ml.inference import ModelConfigurationError, ModelNotFoundError, SignClassifier
 
 blueprint = Blueprint("app", __name__)
@@ -165,11 +165,13 @@ def save_samples() -> tuple[Response, int]:
         }), 400
 
     data_dir: Path = current_app.config["DATA_DIR"]
-    label_dir = data_dir / label
-    label_dir.mkdir(parents=True, exist_ok=True)
-    sample_file = label_dir / f"{session}.csv"
-    with sample_file.open("a", newline="", encoding="utf-8") as csv_file:
-        csv.writer(csv_file).writerows(samples)
+    write_sample_rows(
+        data_dir,
+        label,
+        session,
+        samples,
+        SEQUENCE_LENGTH * RAW_FRAME_SIZE,
+    )
 
     total_samples, session_count = count_label_samples(
         data_dir, label, SEQUENCE_LENGTH * RAW_FRAME_SIZE
@@ -289,23 +291,6 @@ def is_valid_label(label: object) -> TypeGuard[str]:
     return isinstance(label, str) and LABEL_PATTERN.fullmatch(label) is not None
 
 
-def normalize_sample_rows(
-    samples: object, expected_length: int
-) -> list[list[float]] | None:
-    """Validate sample rows and convert their numeric values to floats."""
-    if not isinstance(samples, list):
-        return None
-
-    rows: list[list[float]] = []
-    for sample in samples:
-        if not isinstance(sample, list) or len(sample) != expected_length:
-            return None
-        if any(not is_finite_number(value) for value in sample):
-            return None
-        rows.append([float(value) for value in sample])
-    return rows
-
-
 def normalize_raw_window(
     features: object, expected_length: int
 ) -> list[float] | None:
@@ -315,16 +300,6 @@ def normalize_raw_window(
     if any(not is_finite_number(value) for value in features):
         return None
     return [float(value) for value in features]
-
-
-def is_finite_number(value: object) -> bool:
-    """Return whether a JSON numeric value can be stored as a finite float."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return False
-    try:
-        return math.isfinite(value)
-    except OverflowError:
-        return False
 
 
 def count_samples(sample_file: Path, expected_length: int) -> int:

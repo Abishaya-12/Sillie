@@ -1116,6 +1116,108 @@ input::placeholder {
   border: 0;
 }
 
+/* Admin console */
+.admin-heading {
+  margin-bottom: calc(var(--px) * 5);
+  text-align: center;
+}
+
+.admin-heading h2 {
+  color: var(--accent);
+}
+
+.admin-counters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: calc(var(--px) * 4);
+  margin-bottom: calc(var(--px) * 5);
+}
+
+.admin-counter {
+  text-align: center;
+}
+
+.admin-counter .label {
+  line-height: 1.8;
+}
+
+.admin-counter strong {
+  display: block;
+  color: var(--panel-title);
+  font-size: 2rem;
+}
+
+.admin-section {
+  margin-bottom: calc(var(--px) * 5);
+}
+
+.admin-room-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--px) * 3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-room-list li {
+  padding: calc(var(--px) * 2) calc(var(--px) * 3);
+  border: var(--px) solid var(--outline);
+  background: var(--white);
+}
+
+.admin-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  background: var(--white);
+  text-align: left;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: calc(var(--px) * 2);
+  border: 1px solid var(--outline);
+  overflow-wrap: anywhere;
+}
+
+.admin-table th {
+  background: var(--panel-title);
+  color: var(--white);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.48rem;
+  line-height: 1.8;
+}
+
+.presence-badge {
+  display: inline-block;
+  padding: 2px 5px;
+  border: 1px solid var(--outline);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.45rem;
+  white-space: nowrap;
+}
+
+.presence-badge.online {
+  background: #b9f2ca;
+  color: #174f2c;
+}
+
+.presence-badge.offline {
+  background: #f2d0da;
+  color: var(--text);
+}
+
+.empty-state {
+  color: var(--muted);
+  font-style: italic;
+}
+
 /* Responsive layout and motion accessibility */
 @media (max-width: 860px) {
   .arcade-sprite {
@@ -1191,6 +1293,10 @@ input::placeholder {
 
   .call-controls button:last-child {
     grid-column: 1 / -1;
+  }
+
+  .admin-counters {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .lobby-links {

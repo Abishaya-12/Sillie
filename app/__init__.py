@@ -1,13 +1,14 @@
 """Flask application factory for Sillie."""
 
 from __future__ import annotations
-from typing import TYPE_CHECKING
+
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from flask import Flask
-from werkzeug.middleware.proxy_fix import ProxyFix
+from flask_login import current_user
 from config import (
     FEATURES_PER_FRAME,
     FEATURE_VERSION,
@@ -64,6 +65,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     login_manager.login_view = "auth.login"
 
     from .auth import auth_blueprint
+    from .admin import admin_blueprint, register_admin_cli
     from .models import User
     from .routes import blueprint
     from .signaling import socketio
@@ -71,8 +73,26 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     app.register_blueprint(blueprint)
     app.register_blueprint(auth_blueprint)
+    app.register_blueprint(admin_blueprint)
     socketio.init_app(app, async_mode="threading")
+    register_admin_cli(app)
     app.extensions["sign_classifier"] = SignClassifier(app.config["MODEL_DIR"])
+
+    @app.before_request
+    def update_authenticated_last_seen() -> None:
+        """Update activity timestamps no more than once every 60 seconds."""
+        if not current_user.is_authenticated:
+            return
+        now = datetime.now(UTC)
+        last_seen = current_user.last_seen
+        if last_seen is not None:
+            if last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=UTC)
+            if (now - last_seen).total_seconds() < 60:
+                return
+        current_user.last_seen = now
+        db.session.commit()
+
     with app.app_context():
         db.create_all()
     return app

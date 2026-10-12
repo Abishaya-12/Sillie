@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Admin panel | Sillie{% endblock %}
+
+{% block content %}
+  <section class="admin-heading">
+    <p class="eyebrow">SYSTEM CONSOLE // ADMIN ONLY</p>
+    <h2>PLAYER OPERATIONS</h2>
+  </section>
+
+  <section class="admin-counters" aria-label="Platform status">
+    <article class="panel admin-counter">
+      <p class="label">REGISTERED USERS</p>
+      <strong id="registered-users">{{ users|length }}</strong>
+    </article>
+    <article class="panel admin-counter">
+      <p class="label">ONLINE NOW</p>
+      <strong id="online-now">{{ online_ids|length }}</strong>
+    </article>
+    <article class="panel admin-counter">
+      <p class="label">ACTIVE ROOMS</p>
+      <strong id="active-rooms">{{ active_room_list|length }}</strong>
+    </article>
+  </section>
+
+  <section class="panel admin-section">
+    <div class="panel-header"><h2>ACTIVE ROOMS</h2></div>
+    <ul id="room-list" class="admin-room-list">
+      {% for room in active_room_list %}
+        <li>ROOM {{ room.room }} // {{ room.participant_count }} PLAYERS</li>
+      {% else %}
+        <li class="empty-state">NO ACTIVE ROOMS</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="panel admin-section">
+    <div class="panel-header"><h2>PLAYER DIRECTORY</h2></div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th scope="col">ID</th>
+            <th scope="col">USERNAME</th>
+            <th scope="col">DISPLAY NAME</th>
+            <th scope="col">PROFILE</th>
+            <th scope="col">CREATED</th>
+            <th scope="col">LAST SEEN</th>
+            <th scope="col">STATUS</th>
+          </tr>
+        </thead>
+        <tbody id="user-table-body">
+          {% for user in users %}
+            <tr>
+              <td>{{ user.id }}</td>
+              <td>{{ user.username }}</td>
+              <td>{{ user.display_name }}</td>
+              <td>{{ user.accessibility_profile }}</td>
+              <td>{{ user.created_at or "—" }}</td>
+              <td>{{ user.last_seen or "—" }}</td>
+              <td><span class="presence-badge {{ 'online' if user.id in online_ids else 'offline' }}">{{ "ONLINE" if user.id in online_ids else "OFFLINE" }}</span></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7" class="empty-state">NO PLAYERS YET</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/admin.js') }}" defer></script>
+{% endblock %}

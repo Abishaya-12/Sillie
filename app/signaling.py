@@ -22,13 +22,22 @@ SIGNAL_RATE_WINDOW_SECONDS = 1.0
 rooms: dict[str, dict[str, dict[str, Any]]] = {}
 socket_rooms: dict[str, str] = {}
 signal_times: dict[str, deque[float]] = {}
+socket_users: dict[str, int] = {}
+connected_user_sockets: dict[int, int] = {}
 rooms_lock = RLock()
+# Presence and active room data are process-local and assume exactly ONE worker.
 
 
 @socketio.on("connect")
 def handle_connect(auth: dict[str, Any] | None = None) -> bool:
     """Reject socket connections that do not carry an authenticated session."""
-    return bool(current_user.is_authenticated)
+    if not current_user.is_authenticated:
+        return False
+    user_id = int(current_user.get_id())
+    with rooms_lock:
+        socket_users[request.sid] = user_id
+        connected_user_sockets[user_id] = connected_user_sockets.get(user_id, 0) + 1
+    return True
 
 
 @socketio.on("join")
@@ -132,6 +141,13 @@ def handle_disconnect(reason: str | None = None) -> None:
     with rooms_lock:
         remove_participant(request.sid)
         signal_times.pop(request.sid, None)
+        user_id = socket_users.pop(request.sid, None)
+        if user_id is not None:
+            remaining = connected_user_sockets.get(user_id, 0) - 1
+            if remaining > 0:
+                connected_user_sockets[user_id] = remaining
+            else:
+                connected_user_sockets.pop(user_id, None)
 
 
 def remove_participant(sid: str) -> None:
@@ -158,3 +174,19 @@ def public_profile(participant: dict[str, Any]) -> dict[str, str]:
         "display_name": str(participant["display_name"]),
         "profile": str(participant["accessibility_profile"]),
     }
+
+
+def online_user_ids() -> set[int]:
+    """Return user IDs with one or more connected Socket.IO sessions."""
+    with rooms_lock:
+        return set(connected_user_sockets)
+
+
+def active_rooms() -> list[dict[str, int | str]]:
+    """Return active room codes and participant counts without user identities."""
+    with rooms_lock:
+        return [
+            {"room": room, "participant_count": len(participants)}
+            for room, participants in sorted(rooms.items())
+            if participants
+        ]

@@ -5,10 +5,22 @@ from __future__ import annotations
 import csv
 import math
 import re
+import secrets
 from pathlib import Path
 from typing import Any, TypeGuard
 
-from flask import Blueprint, Response, current_app, jsonify, render_template, request
+from flask import (
+    Blueprint,
+    Response,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
+from flask_login import current_user, login_required
 
 from config import (
     FEATURES_PER_FRAME,
@@ -18,19 +30,83 @@ from config import (
     SAMPLE_RATE_HZ,
     SEQUENCE_LENGTH,
 )
+from .extensions import csrf
 from ml.inference import ModelConfigurationError, ModelNotFoundError, SignClassifier
 
 blueprint = Blueprint("app", __name__)
 LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 @blueprint.route("/")
-def index() -> str:
-    """Serve the main HTML page."""
+def index() -> Response:
+    """Direct visitors to the lobby or the login page."""
+    endpoint = "app.lobby" if current_user.is_authenticated else "auth.login"
+    return redirect(url_for(endpoint))
+
+
+@blueprint.get("/translate")
+def translate() -> str:
+    """Serve the public sign translator."""
     return render_template("index.html")
 
 
+@blueprint.get("/lobby")
+@login_required
+def lobby() -> str:
+    """Serve the authenticated user lobby."""
+    return render_template("lobby.html")
+
+
+@blueprint.post("/lobby/create-room")
+@login_required
+def create_room() -> Response:
+    """Generate a new six-character room code and open its call page."""
+    code = "".join(secrets.choice(ROOM_CODE_ALPHABET) for _ in range(6))
+    return redirect(url_for("app.call_room", code=code))
+
+
+@blueprint.post("/lobby/join-room")
+@login_required
+def join_room() -> Response:
+    """Validate the entered room code and open its call page."""
+    code = request.form.get("room_code", "").strip().upper()
+    if len(code) != 6 or any(character not in ROOM_CODE_ALPHABET for character in code):
+        flash("Enter a valid 6-character room code.", "error")
+        return redirect(url_for("app.lobby"))
+    return redirect(url_for("app.call_room", code=code))
+
+
+@blueprint.get("/call/<code>")
+@login_required
+def call_room(code: str) -> str | tuple[str, int]:
+    """Render the authenticated one-to-one video call page."""
+    if len(code) != 6 or any(character not in ROOM_CODE_ALPHABET for character in code):
+        return render_template("lobby.html"), 404
+    return render_template("call.html", room_code=code)
+
+
+@blueprint.get("/api/ice-config")
+@login_required
+def ice_config() -> Response:
+    """Return public STUN settings and a fully configured optional TURN server."""
+    ice_servers: list[dict[str, Any]] = [
+        {"urls": "stun:stun.l.google.com:19302"}
+    ]
+    turn_url = current_app.config.get("SILLIE_TURN_URL")
+    turn_username = current_app.config.get("SILLIE_TURN_USERNAME")
+    turn_credential = current_app.config.get("SILLIE_TURN_CREDENTIAL")
+    if turn_url and turn_username and turn_credential:
+        ice_servers.append({
+            "urls": turn_url,
+            "username": turn_username,
+            "credential": turn_credential,
+        })
+    return jsonify({"iceServers": ice_servers})
+
+
 @blueprint.route("/collect")
+@login_required
 def collect() -> str:
     """Serve the labelled sample collection page."""
     return render_template("collect.html")
@@ -56,6 +132,8 @@ def api_config() -> Response:
 
 
 @blueprint.route("/api/samples", methods=["POST"])
+@login_required
+@csrf.exempt
 def save_samples() -> tuple[Response, int]:
     """Validate and append raw hand-and-pose sequence windows to session storage."""
     payload: Any = request.get_json(silent=True)
@@ -104,6 +182,7 @@ def save_samples() -> tuple[Response, int]:
 
 
 @blueprint.route("/api/samples/summary")
+@login_required
 def sample_summary() -> Response:
     """Return the number of stored samples for each valid label."""
     data_dir: Path = current_app.config["DATA_DIR"]
@@ -131,6 +210,7 @@ def sample_summary() -> Response:
 
 
 @blueprint.route("/api/predict", methods=["POST"])
+@csrf.exempt
 def predict_sign() -> tuple[Response, int]:
     """Validate a raw landmark sequence and return ranked sign predictions."""
     payload: Any = request.get_json(silent=True)

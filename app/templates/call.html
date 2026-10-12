@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Room {{ room_code }} | Sillie{% endblock %}
+
+{% block content %}
+  <section class="call-shell" data-room-code="{{ room_code }}">
+    <header class="call-heading">
+      <div>
+        <p class="eyebrow">LIVE LINK // ROOM {{ room_code }}</p>
+        <h2>ONE-TO-ONE CALL</h2>
+      </div>
+      <p class="call-status" role="status" aria-live="polite">
+        <span id="call-status-led" class="status-led" data-state="waiting"></span>
+        <span id="call-status">WAITING FOR PEER</span>
+      </p>
+    </header>
+
+    <p id="call-message" class="call-message" role="status" aria-live="polite"></p>
+
+    <div class="call-stage">
+      <video id="remote-video" class="remote-video" autoplay playsinline aria-label="Remote participant video"></video>
+      <div class="remote-placeholder" id="remote-placeholder">WAITING FOR YOUR PEER...</div>
+      <div class="local-video-frame">
+        <video id="local-video" autoplay playsinline muted aria-label="Your camera preview"></video>
+        <span>YOU</span>
+      </div>
+    </div>
+
+    <section class="panel caption-panel" aria-label="Incoming captions">
+      <div class="panel-header"><h2>INCOMING CAPTIONS</h2></div>
+      <div id="incoming-captions" aria-live="polite">CAPTIONS WILL APPEAR HERE.</div>
+    </section>
+
+    <nav class="call-controls" aria-label="Call controls">
+      <button id="mic-button" class="key-primary" type="button" aria-pressed="true">MIC: ON</button>
+      <button id="cam-button" class="key-primary" type="button" aria-pressed="true">CAM: ON</button>
+      <button id="copy-code-button" type="button">COPY CODE</button>
+      <button id="test-caption-button" type="button">TEST CAPTION</button>
+      <button id="end-call-button" class="key-danger" type="button">END CALL</button>
+    </nav>
+  </section>
+
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+  <script type="module" src="{{ url_for('static', filename='js/call.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}Sillie{% endblock %}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%231a1c2c'/%3E%3Cpath d='M3 7h1V5h1V3h2v4h1V1h2v6h1V3h2v5h1v3h-2v2H7v-1H5v-2H4V9H3z' fill='%23ffcd75' stroke='%23f4f4f4' stroke-width='.5'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  </head>
+  <body>
+    <div class="arcade-floaters" aria-hidden="true">
+      <span class="arcade-sprite sprite-heart float-a"></span>
+      <span class="arcade-sprite sprite-star float-b"></span>
+      <span class="arcade-sprite sprite-heart float-c"></span>
+      <span class="arcade-sprite sprite-star float-d"></span>
+    </div>
+    <main class="page-shell">
+      <header class="topbar site-header">
+        <div>
+          <p class="eyebrow">PLAYER ONE // SIGN CONSOLE</p>
+          <div class="brand-row">
+            <svg class="pixel-logo" viewBox="0 0 16 16" role="img" aria-label="Pixel hand">
+              <path d="M3 7h1V5h1V3h2v4h1V1h2v6h1V3h2v5h1v3h-2v2H7v-1H5v-2H4V9H3z" fill="#ffcd75" stroke="#1a1c2c" stroke-width=".5" shape-rendering="crispEdges" />
+              <path d="M5 8h1v1H5zm4 2h1v1H9z" fill="#ef7d57" shape-rendering="crispEdges" />
+            </svg>
+            <h1><a class="brand-link" href="{{ url_for('app.index') }}">SILLIE</a></h1>
+          </div>
+        </div>
+        <nav class="site-nav" aria-label="Main navigation">
+          {% if current_user.is_authenticated %}
+            <span class="nav-greeting">HI, {{ current_user.display_name }}</span>
+            <a class="key-link" href="{{ url_for('app.lobby') }}">LOBBY</a>
+            <form action="{{ url_for('auth.logout') }}" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <button class="key-danger" type="submit">LOGOUT</button>
+            </form>
+          {% else %}
+            <a class="key-link" href="{{ url_for('auth.login') }}">LOGIN</a>
+            <a class="key-link" href="{{ url_for('auth.register') }}">REGISTER</a>
+          {% endif %}
+        </nav>
+      </header>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-stack" role="status" aria-live="polite">
+            {% for category, message in messages %}
+              <p class="flash-message flash-{{ category }}">{{ message }}</p>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

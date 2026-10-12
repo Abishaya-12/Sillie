@@ -742,6 +742,379 @@ input::placeholder {
   overflow-wrap: anywhere;
 }
 
+/* Account and lobby screens */
+.site-header,
+.site-nav,
+.site-nav form,
+.lobby-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(var(--px) * 3);
+}
+
+.site-header {
+  justify-content: space-between;
+}
+
+.site-nav form {
+  margin: 0;
+}
+
+.site-nav .key-link,
+.site-nav button {
+  margin: 0;
+}
+
+.brand-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.nav-greeting {
+  max-width: 100%;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.flash-stack {
+  display: grid;
+  gap: calc(var(--px) * 2);
+  margin-bottom: calc(var(--px) * 5);
+}
+
+.flash-message {
+  margin: 0;
+  padding: calc(var(--px) * 3);
+  border: var(--px) solid var(--outline);
+  background: var(--white);
+  overflow-wrap: anywhere;
+}
+
+.flash-error {
+  border-left: calc(var(--px) * 2) solid var(--bad);
+}
+
+.flash-success {
+  border-left: calc(var(--px) * 2) solid var(--good);
+}
+
+.auth-panel {
+  width: min(620px, 100%);
+  margin: 0 auto;
+}
+
+.auth-form {
+  display: grid;
+  gap: calc(var(--px) * 3);
+}
+
+.auth-form > label,
+.profile-picker legend {
+  color: var(--panel-title);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.6rem;
+  line-height: 1.7;
+}
+
+.auth-form input:not([type="radio"]),
+.join-form input {
+  width: 100%;
+  min-width: 0;
+  padding: calc(var(--px) * 3);
+  border: var(--px) solid var(--outline);
+  border-radius: 0;
+  background: var(--white);
+  color: var(--text);
+  font: inherit;
+}
+
+.auth-form input:focus,
+.join-form input:focus {
+  outline: calc(var(--px) / 2) solid var(--accent);
+  outline-offset: calc(var(--px) / 2);
+}
+
+.profile-picker {
+  display: grid;
+  gap: calc(var(--px) * 3);
+  min-width: 0;
+  margin: calc(var(--px) * 2) 0;
+  padding: calc(var(--px) * 3);
+  border: var(--px) solid var(--outline);
+}
+
+.profile-picker legend {
+  max-width: 100%;
+  padding: 0 calc(var(--px) * 2);
+}
+
+.profile-key {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(var(--px) * 3);
+  min-width: 0;
+  padding: calc(var(--px) * 3);
+  border: var(--px) solid var(--outline);
+  background: var(--key-face);
+  cursor: pointer;
+  box-shadow:
+    inset var(--px) var(--px) 0 var(--key-light),
+    inset calc(-1 * var(--px)) calc(-1 * var(--px)) 0 var(--key-dark);
+}
+
+.profile-key:has(input:checked) {
+  outline: var(--px) solid var(--accent);
+  background: var(--white);
+}
+
+.profile-key input[type="radio"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.profile-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.profile-copy strong {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.62rem;
+  line-height: 1.7;
+}
+
+.profile-copy small {
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+
+.auth-switch {
+  margin-bottom: 0;
+}
+
+.lobby-heading {
+  margin-bottom: calc(var(--px) * 6);
+  text-align: center;
+}
+
+.lobby-heading h2 {
+  margin: calc(var(--px) * 3) 0;
+  color: var(--accent);
+}
+
+.profile-badge {
+  display: inline-block;
+  padding: calc(var(--px) * 2) calc(var(--px) * 3);
+  border: var(--px) solid var(--outline);
+  background: var(--white);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.55rem;
+}
+
+.lobby-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(var(--px) * 5);
+}
+
+.lobby-card p {
+  margin-top: 0;
+}
+
+.lobby-card form {
+  margin-top: calc(var(--px) * 4);
+}
+
+.join-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: calc(var(--px) * 4);
+}
+
+.join-form input {
+  text-transform: uppercase;
+}
+
+.lobby-links {
+  justify-content: center;
+  margin-top: calc(var(--px) * 7);
+}
+
+.call-placeholder {
+  text-align: center;
+}
+
+.call-shell {
+  display: grid;
+  gap: calc(var(--px) * 4);
+}
+
+.call-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: calc(var(--px) * 3);
+}
+
+.call-heading h2 {
+  color: var(--accent);
+}
+
+.call-status {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--px) * 2);
+  margin: 0;
+  padding: calc(var(--px) * 2) calc(var(--px) * 3);
+  border: var(--px) solid var(--outline);
+  background: var(--white);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.58rem;
+  line-height: 1.6;
+}
+
+.status-led {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid var(--outline);
+  border-radius: 50%;
+  background: var(--yellow);
+  box-shadow: 0 0 0 2px var(--key-dark);
+}
+
+.status-led[data-state="connected"] {
+  background: #47bf75;
+}
+
+.status-led[data-state="connecting"],
+.status-led[data-state="reconnecting"] {
+  background: #f3b74b;
+}
+
+.status-led[data-state="ended"] {
+  background: var(--bad);
+}
+
+.call-message {
+  min-height: 1.25em;
+  margin: 0;
+  color: var(--panel-title);
+}
+
+.call-stage {
+  position: relative;
+  min-height: 260px;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border: calc(var(--px) * 2) solid var(--outline);
+  background: #42152e;
+  box-shadow: calc(var(--px) * 2) calc(var(--px) * 2) 0 var(--outline);
+}
+
+.remote-video,
+.remote-placeholder {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.remote-video {
+  object-fit: contain;
+  background: #190d17;
+}
+
+.remote-placeholder {
+  display: grid;
+  place-items: center;
+  padding: calc(var(--px) * 5);
+  color: var(--white);
+  font-family: "Press Start 2P", monospace;
+  font-size: clamp(0.65rem, 2vw, 1rem);
+  line-height: 1.8;
+  text-align: center;
+  text-shadow: 2px 2px 0 var(--outline);
+}
+
+.remote-placeholder[hidden] {
+  display: none;
+}
+
+.local-video-frame {
+  position: absolute;
+  right: calc(var(--px) * 4);
+  bottom: calc(var(--px) * 4);
+  width: clamp(100px, 23%, 240px);
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: var(--px) solid var(--white);
+  background: #190d17;
+  box-shadow: 0 0 0 var(--px) var(--outline);
+}
+
+.local-video-frame video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.local-video-frame span {
+  position: absolute;
+  bottom: 2px;
+  left: 4px;
+  padding: 0 4px;
+  background: var(--white);
+  color: var(--text);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.45rem;
+}
+
+.caption-panel {
+  min-width: 0;
+}
+
+#incoming-captions {
+  min-height: 52px;
+  overflow-wrap: anywhere;
+}
+
+.call-controls {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: calc(var(--px) * 4);
+  padding: calc(var(--px) * 2);
+}
+
+.call-controls button {
+  min-height: 48px;
+}
+
+.call-controls .key-danger {
+  background: #bd2e5a;
+  color: #fff8fa;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Responsive layout and motion accessibility */
 @media (max-width: 860px) {
   .arcade-sprite {
@@ -758,6 +1131,74 @@ input::placeholder {
 
   .status-pill {
     max-width: 52%;
+  }
+}
+
+@media (max-width: 520px) {
+  .site-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .site-nav {
+    width: 100%;
+  }
+
+  .site-nav .key-link,
+  .site-nav button {
+    padding-right: calc(var(--px) * 2);
+    padding-left: calc(var(--px) * 2);
+    font-size: 0.52rem;
+  }
+
+  .lobby-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .join-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .join-form button {
+    width: 100%;
+  }
+
+  .call-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .call-status {
+    max-width: 100%;
+    font-size: 0.5rem;
+  }
+
+  .call-stage {
+    min-height: 220px;
+  }
+
+  .local-video-frame {
+    right: calc(var(--px) * 3);
+    bottom: calc(var(--px) * 3);
+    width: 34%;
+  }
+
+  .call-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .call-controls button:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .lobby-links {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .lobby-links .key-link {
+    text-align: center;
   }
 }
 

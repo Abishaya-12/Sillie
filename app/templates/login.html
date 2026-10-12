@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Login | Sillie{% endblock %}
+
+{% block content %}
+  <section class="panel auth-panel">
+    <div class="panel-header"><h2>CONTINUE YOUR QUEST</h2></div>
+    <form class="auth-form" action="{{ url_for('auth.login') }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <input type="hidden" name="next" value="{{ next_url or '' }}" />
+      <label for="username">USERNAME</label>
+      <input id="username" name="username" type="text" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]{3,20}" autocomplete="username" required />
+      <label for="password">PASSWORD</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+      <button class="key-primary" type="submit">LOGIN</button>
+    </form>
+    <p class="auth-switch">NEW PLAYER? <a href="{{ url_for('auth.register') }}">CREATE AN ACCOUNT</a></p>
+  </section>
+{% endblock %}

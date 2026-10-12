@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Lobby | Sillie{% endblock %}
+
+{% block content %}
+  <section class="lobby-heading">
+    <p class="eyebrow">WELCOME BACK, {{ current_user.display_name }}</p>
+    <h2>READY TO CONNECT?</h2>
+    <span class="profile-badge">{{ current_user.accessibility_profile|upper }} PROFILE</span>
+  </section>
+
+  <section class="lobby-grid" aria-label="Lobby actions">
+    <article class="panel lobby-card">
+      <div class="panel-header"><h2>START A CALL</h2></div>
+      <p>Create a room and invite someone with your room code.</p>
+      <form action="{{ url_for('app.create_room') }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <button class="key-primary" type="submit">CREATE ROOM</button>
+      </form>
+    </article>
+
+    <article class="panel lobby-card">
+      <div class="panel-header"><h2>JOIN A CALL</h2></div>
+      <p>Enter the six-character room code you received.</p>
+      <form class="join-form" action="{{ url_for('app.join_room') }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <label class="sr-only" for="room-code">ROOM CODE</label>
+        <input id="room-code" name="room_code" type="text" minlength="6" maxlength="6" pattern="[A-HJ-NP-Z2-9]{6}" autocapitalize="characters" autocomplete="off" placeholder="ABC234" required />
+        <button class="key-primary" type="submit">JOIN ROOM</button>
+      </form>
+    </article>
+  </section>
+
+  <nav class="lobby-links" aria-label="More Sillie tools">
+    <a class="key-link" href="{{ url_for('app.translate') }}">SOLO TRANSLATOR</a>
+    <a class="key-link" href="{{ url_for('app.collect') }}">COLLECT SAMPLES</a>
+  </nav>
+{% endblock %}

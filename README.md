@@ -4,7 +4,7 @@ Sillie is a real-time sign language translation project designed for live video-
 
 ## Stack
 
-- Frontend: HTML, CSS, JavaScript, WebRTC-ready UI, browser speech synthesis
+- Frontend: HTML, CSS, JavaScript, 1:1 WebRTC calls and browser speech synthesis
 - Hand tracking: MediaPipe Hands
 - Sign classification: TensorFlow/Keras model trained on extracted landmarks
 - Speech-to-text: Web Speech API first, then Whisper if needed
@@ -14,6 +14,11 @@ Sillie is a real-time sign language translation project designed for live video-
 ## Why these dependencies
 
 - Flask: lightweight web server for routing and serving the UI
+- Flask-SQLAlchemy: persist account profiles in the configured SQL database
+- Flask-Login: manage authenticated user sessions
+- Flask-WTF: protect account and lobby forms with CSRF tokens
+- Flask-SocketIO: authenticate users and relay WebRTC signaling over Socket.IO
+- simple-websocket: provide WebSocket support with Flask-SocketIO's threading mode
 - OpenCV: camera input and preprocessing utilities
 - MediaPipe: robust hand landmark detection in-browser or in Python preprocessing
 - TensorFlow/Keras: small model training and inference for sign classification
@@ -32,8 +37,30 @@ Sillie is a real-time sign language translation project designed for live video-
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+export SILLIE_DEBUG=true
+export SILLIE_SECRET_KEY=local-development-only-change-me
 python server.py
 ```
+
+On Windows PowerShell, set the same local-only values with
+`$env:SILLIE_DEBUG = "true"` and
+`$env:SILLIE_SECRET_KEY = "local-development-only-change-me"`.
+
+Set a strong `SILLIE_SECRET_KEY` in the environment before running outside debug
+mode. Set `SILLIE_DATABASE_URL` to a SQLAlchemy database URI to use a database
+other than the default SQLite file in the Flask `instance/` directory. For
+example, local PowerShell development can use:
+
+```powershell
+$env:SILLIE_DEBUG = "true"
+$env:SILLIE_SECRET_KEY = "replace-with-a-local-development-secret"
+python server.py
+```
+
+In production, set `SILLIE_SECRET_KEY` and `SILLIE_DATABASE_URL` in the hosting
+provider's environment configuration. SQLite files on Render's free instances
+are wiped on every deploy or restart; use persistent storage or an external
+database if account data must survive.
 
 For model training and server inference, install the ML extras separately:
 
@@ -60,16 +87,44 @@ Run the server with the same Python environment used to install the ML requireme
 
 The app will be available at `http://127.0.0.1:5000`.
 
+## Video calls
+
+Open the same room from two signed-in browser sessions. For two devices on
+different networks, use an HTTPS tunnel such as Cloudflare Tunnel or ngrok and
+share its HTTPS URL. Browsers require HTTPS for camera and microphone access,
+except on localhost. For two local browser windows, launch Chrome with
+`--use-fake-device-for-media-stream` to use a simulated camera and microphone,
+using separate Chrome profiles so each window can sign into a different account.
+The call page loads the Socket.IO browser client required by Flask-SocketIO; no
+other JavaScript packages are needed.
+
+Calls use a public STUN server by default. For networks that require TURN,
+configure all three optional environment variables:
+
+- `SILLIE_TURN_URL` – for example, `turn:turn.example.com:3478`
+- `SILLIE_TURN_USERNAME`
+- `SILLIE_TURN_CREDENTIAL`
+
+Run one Gunicorn worker with threaded handling for WebSocket connections:
+
+```bash
+gunicorn server:app --bind 0.0.0.0:$PORT --workers 1 --threads 100 --timeout 120
+```
+
+Exactly one worker is required because call rooms and signaling participants are
+stored in memory in that process; additional workers would have separate room
+state and could not signal each other. Do not configure eventlet or gevent.
+
 For an offline demo, download the Press Start 2P and VT323 font files into `app/static/fonts/` and replace the Google Fonts link in each page with local `@font-face` declarations in `app/static/css/style.css`.
 
 ## Collecting data
 
-Open `http://127.0.0.1:5000/collect`, optionally enter your name, and enter a label using letters, numbers, dashes, or underscores. Sit far enough back that your full head and both shoulders remain visible, and keep a consistent distance from the camera. Each recording samples raw MediaPipe hand and pose coordinates at the configured 30 Hz, then creates overlapping one-second windows. Repeat each sign 2-3 times per recording; collect at least three separate recordings per sign from at least two people. Record an `idle` label too (hand resting or moving randomly). **Save samples** stores raw windows in `data/<label>/<session>.csv`.
+Sign in, open **COLLECT SAMPLES** from the lobby, optionally enter your name, and enter a label using letters, numbers, dashes, or underscores. Sit far enough back that your full head and both shoulders remain visible, and keep a consistent distance from the camera. Each recording samples raw MediaPipe hand and pose coordinates at the configured 30 Hz, then creates overlapping one-second windows. Repeat each sign 2-3 times per recording; collect at least three separate recordings per sign from at least two people. Record an `idle` label too (hand resting or moving randomly). **Save samples** stores raw windows in `data/<label>/<session>.csv`.
 
 This pipeline computes body-aware features from raw hand and pose windows in `ml/features.py`. Delete or move the old `data/` folder before collecting; old single-frame and 66-feature sequence rows are not compatible with this raw format. Training skips incompatible CSV files with a warning. Set `SILLIE_DATA_DIR` to use a different dataset directory.
 
-Workflow: collect raw hand-and-pose windows for each label at `/collect`, install the ML dependencies, run `python -m ml.train`, then start the app with the same Python environment (`.venv\Scripts\python.exe server.py` on Windows) and test live translation at `/`.
+Workflow: collect raw hand-and-pose windows for each label from the authenticated lobby, install the ML dependencies, run `python -m ml.train`, then start the app with the same Python environment (`.venv\Scripts\python.exe server.py` on Windows) and test live translation at `/translate`.
 
 ## Current status
 
-The webcam hand-and-pose tracking page, raw sequence collection, body-aware feature extraction, and Conv1D-GRU training and prediction are in place.
+The webcam hand-and-pose tracking page, raw sequence collection, body-aware feature extraction, and Conv1D-GRU training and prediction are in place. Authenticated users can also make 1:1 WebRTC calls; captions are currently limited to the in-call test data channel.

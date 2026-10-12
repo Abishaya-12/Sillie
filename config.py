@@ -18,8 +18,15 @@ FEATURE_VERSION = "v2"
 class Settings:
     """Define runtime configuration with environment overrides."""
 
-    secret_key: str = os.getenv("SILLIE_SECRET_KEY", "dev-secret-key")
+    secret_key: str | None = os.getenv("SILLIE_SECRET_KEY")
     debug: bool = os.getenv("SILLIE_DEBUG", "false").lower() == "true"
+    database_url: str = os.getenv(
+        "SILLIE_DATABASE_URL",
+        f"sqlite:///{(Path(__file__).resolve().parent / 'instance' / 'sillie.sqlite3').as_posix()}",
+    )
+    turn_url: str | None = os.getenv("SILLIE_TURN_URL")
+    turn_username: str | None = os.getenv("SILLIE_TURN_USERNAME")
+    turn_credential: str | None = os.getenv("SILLIE_TURN_CREDENTIAL")
     host: str = os.getenv("SILLIE_HOST", "127.0.0.1")
     port: int = int(os.getenv("SILLIE_PORT", "5000"))
     max_sign_samples: int = int(os.getenv("SILLIE_MAX_SIGN_SAMPLES", "100"))

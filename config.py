@@ -41,6 +41,12 @@ class Settings:
     data_dir: Path = Path(
         os.getenv("SILLIE_DATA_DIR", str(Path(__file__).resolve().parent / "data"))
     )
+    datasets_dir: Path = Path(
+        os.getenv(
+            "SILLIE_DATASETS_DIR",
+            str(Path(__file__).resolve().parent / "datasets"),
+        )
+    )
     model_dir: Path = Path(
         os.getenv("SILLIE_MODEL_DIR", str(Path(__file__).resolve().parent / "models"))
     )

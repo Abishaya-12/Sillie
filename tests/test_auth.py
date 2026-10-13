@@ -83,6 +83,7 @@ def test_register_stores_lowercase_username_and_password_hash(
             "password": "long-enough-password",
             "confirm_password": "long-enough-password",
             "accessibility_profile": "deaf",
+            "is_admin": "true",
         },
     )
     assert response.status_code == 302
@@ -92,6 +93,36 @@ def test_register_stores_lowercase_username_and_password_hash(
         ).scalar_one()
         assert user.password_hash != "long-enough-password"
         assert user.accessibility_profile == "deaf"
+        assert not user.is_admin
+
+
+def test_profile_page_updates_accessibility_profile_only(
+    app: Flask, client: FlaskClient
+) -> None:
+    """Users can change their accessibility profile but not admin status."""
+    register_user(client)
+    page = client.get("/profile")
+    match = CSRF_PATTERN.search(page.data)
+    assert page.status_code == 200
+    assert match is not None
+
+    response = client.post(
+        "/profile",
+        data={
+            "csrf_token": match.group(1).decode(),
+            "accessibility_profile": "mute",
+            "is_admin": "true",
+        },
+    )
+
+    assert response.status_code == 302
+    assert response.location.endswith("/profile")
+    with app.app_context():
+        user = db.session.execute(
+            db.select(User).where(User.username == "player_one")
+        ).scalar_one()
+        assert user.accessibility_profile == "mute"
+        assert not user.is_admin
 
 
 def test_duplicate_username_is_rejected(app: Flask, client: FlaskClient) -> None:

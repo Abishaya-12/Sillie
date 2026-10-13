@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Profile | Sillie{% endblock %}
+
+{% block content %}
+  <section class="panel auth-panel">
+    <div class="panel-header"><h2>PLAYER PROFILE</h2></div>
+    <form class="auth-form" action="{{ url_for('auth.profile') }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <fieldset class="profile-picker">
+        <legend>ACCESSIBILITY PROFILE</legend>
+        {% for profile, description in accessibility_profiles.items() %}
+          <label class="profile-key" for="profile-{{ profile }}">
+            <input id="profile-{{ profile }}" name="accessibility_profile" type="radio" value="{{ profile }}" {% if selected_profile == profile %}checked{% endif %} required />
+            <span class="profile-copy"><strong>{{ profile|upper }}</strong><small>{{ description }}</small></span>
+          </label>
+        {% endfor %}
+      </fieldset>
+      <button class="key-primary" type="submit">SAVE PROFILE</button>
+    </form>
+  </section>
+{% endblock %}

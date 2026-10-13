@@ -8,7 +8,7 @@ import os
 from urllib.parse import urlsplit
 
 from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
-from flask_login import current_user, login_user, logout_user
+from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -139,6 +139,26 @@ def logout() -> Response:
     logout_user()
     flash("You have logged out.", "success")
     return redirect(url_for("auth.login"))
+
+
+@auth_blueprint.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile() -> Response | str:
+    """Let the signed-in user update their accessibility profile."""
+    if request.method == "POST":
+        accessibility_profile = request.form.get("accessibility_profile", "")
+        if accessibility_profile not in ACCESSIBILITY_PROFILES:
+            flash("Choose one of the accessibility profiles.", "error")
+        else:
+            current_user.accessibility_profile = accessibility_profile
+            db.session.commit()
+            flash("Your accessibility profile has been updated.", "success")
+            return redirect(url_for("auth.profile"))
+    return render_template(
+        "profile.html",
+        accessibility_profiles=ACCESSIBILITY_PROFILES,
+        selected_profile=current_user.accessibility_profile,
+    )
 
 
 def safe_next_url(target: str) -> str:

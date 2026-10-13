@@ -12,6 +12,7 @@ venv/
 instance/
 .pytest_cache/
 data/
+datasets/
 
 # OS/editor
 .DS_Store

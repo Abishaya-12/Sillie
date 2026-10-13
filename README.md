@@ -89,6 +89,25 @@ python -m ml.train
 
 ### Importing video datasets
 
+#### Fetching selected WLASL videos
+
+Install the ML and Hugging Face dependencies with `pip install -r requirements-ml.txt`.
+The fetcher uses `HF_TOKEN` when set, then a cached Hugging Face login, and otherwise
+continues anonymously with lower rate limits. To save a login for later use, run
+`hf auth login`.
+
+```powershell
+$env:HF_TOKEN = "your-hugging-face-token"
+python -m ml.fetch_wlasl --words yes,hello,father,listen,bathroom --dry-run
+python -m ml.fetch_wlasl --words yes,hello,father,listen,bathroom --max-per-word 12
+```
+
+Videos are written to `datasets/wlasl/<word>/`; the `datasets/` directory is ignored
+by Git. WLASL is intended for **academic and computational use only**; commercial
+use is not allowed under its Computational Use of Data Agreement. Credit the WLASL
+authors, Dongxu Li and Hongdong Li, when using the dataset, and follow the dataset's
+license and citation requirements.
+
 Download sign videos manually and place them under
 `datasets/<dataset-name>/<label>/` as `.mp4`, `.webm`, `.mov`, or `.avi` files.
 You may add `datasets/<dataset-name>/signers.csv` with `file,signer` columns to

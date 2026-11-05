@@ -146,6 +146,25 @@ Run the server with the same Python environment used to install the ML requireme
 
 The app will be available at `http://127.0.0.1:5000`.
 
+### Gnani setup
+
+Copy `.env.example` to `.env` and set `GNANI_API_KEY` from the Gnani APIs
+dashboard. Keep `.env` private; it is ignored by Git. `GNANI_ORGANIZATION_ID`
+and `GNANI_USER_ID` are included for SDK or account-specific requirements, but
+the current REST references document `X-API-Key-ID` as the required header.
+`GNANI_BASE_URL` defaults to `https://api.vachana.ai`.
+
+The authenticated server endpoints proxy TTS and STT requests, so the browser
+never receives the key. REST STT explicitly uses Prisma v3.0 and accepts a
+language code, `indic-auto`, or up to four distinct language codes. Clips are
+limited to 30 seconds by Gnani; Sillie additionally caps uploads at 10 MiB and
+accepts WAV, MP3, OGG, FLAC, AAC, or M4A. TTS uses Timbre v3.0 with a catalog
+voice. The translator falls back to browser speech synthesis if server-side TTS
+is unavailable. The implementation uses `requests` for multipart uploads and
+HTTP timeouts; it does not require the separate `gnani-vachana` SDK.
+`python-dotenv` loads `.env` at startup without overriding variables already set
+in the process environment.
+
 ## Video calls
 
 Open the same room from two signed-in browser sessions. For two devices on

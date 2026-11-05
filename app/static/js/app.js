@@ -127,11 +127,44 @@ async function refreshModelStatus() {
  * @param {string} word The newly committed word.
  */
 function speakWord(word) {
-  if (!autoSpeak.checked || !("speechSynthesis" in window)) {
+  if (!autoSpeak.checked) {
     return;
   }
 
-  window.speechSynthesis.speak(new SpeechSynthesisUtterance(word));
+  void speakText(word);
+}
+
+/**
+ * Request server-side Gnani audio and fall back to browser speech synthesis.
+ * @param {string} text Text to speak.
+ */
+async function speakText(text) {
+  let audioUrl = null;
+  try {
+    const response = await fetch("/api/speech/tts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector('meta[name="csrf-token"]')?.content || "",
+      },
+      body: JSON.stringify({ text, language: "auto", voice: "Shivani" }),
+    });
+    if (!response.ok) {
+      throw new Error(`Gnani TTS returned HTTP ${response.status}.`);
+    }
+    audioUrl = URL.createObjectURL(await response.blob());
+    const audio = new Audio(audioUrl);
+    audio.addEventListener("ended", () => URL.revokeObjectURL(audioUrl), { once: true });
+    await audio.play();
+  } catch (error) {
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl);
+    }
+    console.warn("Gnani TTS unavailable; using browser speech synthesis.", error);
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+    }
+  }
 }
 
 /**
@@ -261,11 +294,13 @@ async function initialiseCamera() {
  */
 function speakTranscript() {
   const sentence = committedWords.join(" ");
-  if (!sentence || !("speechSynthesis" in window)) {
+  if (!sentence) {
     return;
   }
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(new SpeechSynthesisUtterance(sentence));
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+  }
+  void speakText(sentence);
 }
 
 clearButton.addEventListener("click", () => {

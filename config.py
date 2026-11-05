@@ -6,6 +6,10 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
 SEQUENCE_LENGTH = 30
 SAMPLE_RATE_HZ = 30
 RAW_FRAME_SIZE = 129
@@ -35,6 +39,10 @@ class Settings:
     turn_url: str | None = os.getenv("SILLIE_TURN_URL")
     turn_username: str | None = os.getenv("SILLIE_TURN_USERNAME")
     turn_credential: str | None = os.getenv("SILLIE_TURN_CREDENTIAL")
+    gnani_api_key: str | None = os.getenv("GNANI_API_KEY")
+    gnani_org_id: str | None = os.getenv("GNANI_ORGANIZATION_ID")
+    gnani_user_id: str | None = os.getenv("GNANI_USER_ID")
+    gnani_base_url: str = os.getenv("GNANI_BASE_URL", "https://api.vachana.ai")
     host: str = os.getenv("SILLIE_HOST", "127.0.0.1")
     port: int = int(os.getenv("SILLIE_PORT", "5000"))
     max_sign_samples: int = int(os.getenv("SILLIE_MAX_SIGN_SAMPLES", "100"))

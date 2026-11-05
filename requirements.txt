@@ -6,3 +6,5 @@ Flask-Login>=0.6.3
 Flask-WTF>=1.2.1
 Flask-SocketIO>=5.3.6
 simple-websocket>=1.0.0
+requests>=2.32.0
+python-dotenv>=1.0.0

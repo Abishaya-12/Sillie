@@ -34,6 +34,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app.config["SILLIE_TURN_URL"] = config.turn_url
     app.config["SILLIE_TURN_USERNAME"] = config.turn_username
     app.config["SILLIE_TURN_CREDENTIAL"] = config.turn_credential
+    app.config["GNANI_API_KEY"] = config.gnani_api_key
+    app.config["GNANI_ORGANIZATION_ID"] = config.gnani_org_id
+    app.config["GNANI_USER_ID"] = config.gnani_user_id
+    app.config["GNANI_BASE_URL"] = config.gnani_base_url
     app.config["DATA_DIR"] = config.data_dir
     app.config["MODEL_DIR"] = config.model_dir
     app.config["SEQUENCE_LENGTH"] = SEQUENCE_LENGTH
@@ -68,10 +72,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     from .admin import admin_blueprint, register_admin_cli
     from .models import User
     from .routes import blueprint
+    from .speech import speech_blueprint
     from .signaling import socketio
     from ml.inference import SignClassifier
 
     app.register_blueprint(blueprint)
+    app.register_blueprint(speech_blueprint)
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(admin_blueprint)
     socketio.init_app(app, async_mode="threading")
